@@ -88,6 +88,27 @@ export const installmentPlans = sqliteTable('installment_plans', {
   status: text('status', { enum: ['active', 'paid', 'cancelled'] }).notNull(), ...auditColumns,
 }, (table) => [index('idx_installment_plans_account').on(table.liabilityAccountId)]);
 
+export const counterparties = sqliteTable('counterparties', {
+  id: text('id').primaryKey(), workspaceId: text('workspace_id').notNull().references(() => workspaces.id),
+  name: text('name').notNull(), phone: text('phone'), note: text('note'), ...auditColumns,
+}, (table) => [index('idx_counterparties_workspace').on(table.workspaceId)]);
+
+export const debtAgreements = sqliteTable('debt_agreements', {
+  id: text('id').primaryKey(), workspaceId: text('workspace_id').notNull().references(() => workspaces.id),
+  counterpartyId: text('counterparty_id').notNull().references(() => counterparties.id),
+  direction: text('direction', { enum: ['borrowed', 'lent'] }).notNull(),
+  principalMinor: integer('principal_minor').notNull(), interestMinor: integer('interest_minor').notNull().default(0),
+  currency: text('currency').notNull().default('VND'), startedAt: integer('started_at', { mode: 'timestamp_ms' }).notNull(),
+  dueAt: integer('due_at', { mode: 'timestamp_ms' }), status: text('status', { enum: ['active', 'paid', 'overdue', 'cancelled'] }).notNull(),
+  note: text('note'), ...auditColumns,
+}, (table) => [index('idx_debt_agreements_workspace_status').on(table.workspaceId, table.status), index('idx_debt_agreements_counterparty').on(table.counterpartyId)]);
+
+export const debtPayments = sqliteTable('debt_payments', {
+  id: text('id').primaryKey(), debtAgreementId: text('debt_agreement_id').notNull().references(() => debtAgreements.id),
+  transactionId: text('transaction_id').references(() => transactions.id), amountMinor: integer('amount_minor').notNull(),
+  paidAt: integer('paid_at', { mode: 'timestamp_ms' }).notNull(), note: text('note'), createdAt: integer('created_at', { mode: 'timestamp_ms' }).notNull(),
+}, (table) => [index('idx_debt_payments_agreement').on(table.debtAgreementId)]);
+
 export const auditLogs = sqliteTable('audit_logs', {
   id: text('id').primaryKey(), workspaceId: text('workspace_id').notNull().references(() => workspaces.id),
   actorId: text('actor_id').references(() => users.id), action: text('action').notNull(),
