@@ -1,7 +1,8 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArrowDownLeft, ArrowUpRight, Bell, ChevronDown, CircleUserRound, CreditCard, HandCoins, Home, Inbox, Landmark, Plus, ScanLine, Search, Settings, TrendingDown, TrendingUp, WalletCards, X } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Bell, ChevronDown, CircleUserRound, CreditCard, HandCoins, Home, Inbox, Landmark, LogOut, Plus, ScanLine, Search, Settings, TrendingDown, TrendingUp, WalletCards, X } from 'lucide-react';
+import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cashSignFor, debtActions, expenseOptions, incomeOptions, reportingBucketFor, type DebtAction, type TransactionGroup } from '@/lib/finance-taxonomy';
@@ -47,7 +48,7 @@ export default function HomePage() {
   const [syncStatus, setSyncStatus] = useState<'loading' | 'synced' | 'local' | 'error'>('loading');
   const [accountEmail, setAccountEmail] = useState('');
   const [accountId, setAccountId] = useState('');
-  const [authState, setAuthState] = useState<'loading' | 'demo' | 'signed_out' | 'signed_in'>('loading');
+  const [authState, setAuthState] = useState<'loading' | 'unconfigured' | 'signed_out' | 'signed_in'>('loading');
 
   useEffect(() => {
     const applyData = (data: any) => {
@@ -74,7 +75,7 @@ export default function HomePage() {
       const supabase = getSupabaseBrowserClient();
       if (!supabase) {
         applyData(localData);
-        setAuthState('demo');
+        setAuthState('unconfigured');
         setSyncStatus(localData ? 'local' : 'error');
         setReady(true);
         return;
@@ -132,13 +133,14 @@ export default function HomePage() {
 
   const title: Record<View, string> = { overview: 'Tổng quan', pending: 'Giao dịch chờ duyệt', transactions: 'Tất cả giao dịch', accounts: 'Tài khoản của bạn', cards: 'Thẻ tín dụng', budgets: 'Ngân sách theo danh mục', debts: 'Nợ & cho vay' };
 
-  if (authState === 'signed_out') return <GoogleSignIn />;
+  if (authState === 'loading') return <main className="grid min-h-dvh place-items-center bg-[#fffafb]"><Image src="/app-icon.png" alt="OhBabyLoveMoney" width={96} height={96} priority className="size-24 rounded-[26px]" /></main>;
+  if (authState === 'signed_out' || authState === 'unconfigured') return <GoogleSignIn configured={authState !== 'unconfigured'} />;
 
   return (
     <main className="min-h-dvh bg-[#f5f7f6] text-[#17231f]">
       {notice && <div role="status" className="fixed left-1/2 top-4 z-[80] w-max max-w-[90vw] -translate-x-1/2 rounded-full bg-[#17231f] px-4 py-2.5 text-center text-sm font-medium text-white shadow-xl">{notice}</div>}
       <div className="mx-auto grid min-h-dvh max-w-[1480px] grid-cols-1 lg:grid-cols-[250px_1fr]">
-        <Sidebar view={view} pending={pending.length} onView={setView} onInfo={() => toast('Cài đặt tài khoản sẽ mở sau khi kết nối Google')} />
+        <Sidebar view={view} pending={pending.length} email={accountEmail} onView={setView} onInfo={() => toast(accountEmail || 'Tài khoản Google')} onSignOut={async () => { const supabase = getSupabaseBrowserClient(); await supabase?.auth.signOut(); window.location.assign('/'); }} />
         <section className="min-w-0 pb-24 lg:pb-8">
           <header className="flex h-16 items-center justify-between border-b border-[#dfe6e2] bg-white/90 px-5 backdrop-blur md:px-8">
             <div><p className="text-xs font-semibold text-[#7b8982]">OhBabyLoveMoney</p><h1 className="text-lg font-bold tracking-tight">{title[view]}</h1></div>
@@ -185,24 +187,37 @@ export default function HomePage() {
   );
 }
 
-function GoogleSignIn() {
+function GoogleSignIn({ configured }: { configured: boolean }) {
   const [busy, setBusy] = useState(false);
+  const [errorMessage, setErrorMessage] = useState('');
   const signIn = async () => {
     const supabase = getSupabaseBrowserClient();
-    if (!supabase) return;
+    if (!supabase) {
+      setErrorMessage('Chưa có cấu hình Supabase trên Vercel. Hãy thêm 2 Environment Variables được hướng dẫn bên dưới.');
+      return;
+    }
     setBusy(true);
+    setErrorMessage('');
     const { error } = await supabase.auth.signInWithOAuth({
       provider: 'google',
-      options: { redirectTo: `${window.location.origin}/auth/callback` },
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+        queryParams: { access_type: 'offline', prompt: 'select_account' },
+      },
     });
-    if (error) setBusy(false);
+    if (error) {
+      setBusy(false);
+      setErrorMessage(`Không thể mở đăng nhập Google: ${error.message}`);
+    }
   };
-  return <main className="grid min-h-dvh place-items-center bg-[#f5f7f6] p-5 text-[#17231f]"><section className="w-full max-w-md rounded-[28px] border border-[#dfe6e2] bg-white p-7 text-center shadow-[0_24px_60px_rgba(23,35,31,.10)]"><div className="mx-auto grid size-14 place-items-center rounded-2xl bg-[#d8ff62] text-2xl font-black">O</div><h1 className="mt-5 text-2xl font-bold">Đăng nhập OhBabyLoveMoney</h1><p className="mt-2 text-sm leading-6 text-[#66756e]">Dữ liệu tài chính được tách riêng và đồng bộ theo tài khoản Google của bạn.</p><Button onClick={signIn} disabled={busy} className="mt-6 h-12 w-full bg-[#17231f] text-white"><span className="grid size-6 place-items-center rounded-full bg-white font-bold text-[#4285f4]">G</span>{busy?'Đang chuyển đến Google…':'Tiếp tục với Google'}</Button><p className="mt-4 text-xs leading-5 text-[#849189]">Ứng dụng không nhận hoặc lưu mật khẩu Google.</p></section></main>;
+  const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
+  const callbackError = params?.get('auth_error');
+  return <main className="grid min-h-dvh place-items-center bg-[#fffafb] p-5 text-[#17231f]"><section className="w-full max-w-md rounded-[28px] border border-[#f0e1e5] bg-white p-7 text-center shadow-[0_24px_60px_rgba(23,35,31,.10)]"><Image src="/logo-full.png" alt="Oh Baby Love Money" width={280} height={280} priority className="mx-auto h-auto w-[230px]" /><h1 className="mt-2 text-2xl font-bold">Đăng nhập OhBabyLoveMoney</h1><p className="mt-2 text-sm leading-6 text-[#66756e]">Dữ liệu tài chính được tách riêng và đồng bộ theo tài khoản Google của bạn.</p>{(!configured || callbackError || errorMessage) && <div role="alert" className="mt-4 rounded-xl bg-[#fff0ed] px-4 py-3 text-left text-xs leading-5 text-[#8b3d34]">{errorMessage || (callbackError === 'oauth' ? 'Google chưa được bật hoặc callback URL chưa đúng trong Supabase.' : callbackError ? 'Cấu hình đăng nhập chưa hoàn tất.' : 'Chưa kết nối Supabase trên Vercel nên Google Login chưa thể hoạt động.')}</div>}<Button onClick={signIn} disabled={busy || !configured} className="mt-6 h-12 w-full bg-[#17231f] text-white"><span className="grid size-6 place-items-center rounded-full bg-white font-bold text-[#4285f4]">G</span>{busy?'Đang chuyển đến Google…':'Tiếp tục với Google'}</Button>{!configured && <p className="mt-3 text-xs leading-5 text-[#849189]">Cần thêm <code>NEXT_PUBLIC_SUPABASE_URL</code> và <code>NEXT_PUBLIC_SUPABASE_ANON_KEY</code> trong Vercel rồi Redeploy.</p>}<p className="mt-4 text-xs leading-5 text-[#849189]">Ứng dụng không nhận hoặc lưu mật khẩu Google.</p></section></main>;
 }
 
-function Sidebar({ view, pending, onView, onInfo }: { view: View; pending: number; onView: (view: View) => void; onInfo: () => void }) {
+function Sidebar({ view, pending, email, onView, onInfo, onSignOut }: { view: View; pending: number; email: string; onView: (view: View) => void; onInfo: () => void; onSignOut: () => void }) {
   return <aside className="hidden border-r border-[#dfe6e2] bg-white px-5 py-7 lg:flex lg:flex-col">
-    <div className="mb-9 flex items-center gap-3 px-2"><div className="grid size-10 place-items-center rounded-2xl bg-[#d8ff62] text-xl font-black">O</div><div><p className="font-bold leading-none">OhBaby</p><p className="mt-1 text-xs font-semibold text-[#708078]">LoveMoney</p></div></div>
+    <div className="mb-9 flex items-center gap-3 px-2"><Image src="/app-icon.png" alt="" width={44} height={44} className="size-11 rounded-2xl" /><div><p className="font-bold leading-none">OhBaby</p><p className="mt-1 text-xs font-semibold text-[#708078]">LoveMoney</p></div></div>
     <nav className="space-y-1.5" aria-label="Điều hướng chính">
       <NavItem icon={<Home />} label="Tổng quan" active={view === 'overview'} onClick={() => onView('overview')} />
       <NavItem icon={<Inbox />} label="Chờ duyệt" active={view === 'pending'} badge={pending} onClick={() => onView('pending')} />
@@ -212,7 +227,7 @@ function Sidebar({ view, pending, onView, onInfo }: { view: View; pending: numbe
       <NavItem icon={<HandCoins />} label="Nợ & cho vay" active={view === 'debts'} onClick={() => onView('debts')} />
       <NavItem icon={<CreditCard />} label="Thẻ tín dụng" active={view === 'cards'} onClick={() => onView('cards')} />
     </nav>
-    <div className="mt-auto space-y-1.5"><NavItem icon={<Settings />} label="Cài đặt" onClick={onInfo} /><button onClick={onInfo} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-[#f2f5f3]"><CircleUserRound className="size-5" /><span className="min-w-0 flex-1 truncate text-sm font-semibold">Danny Nhật</span><ChevronDown className="size-4 text-[#7b8982]" /></button></div>
+    <div className="mt-auto space-y-1.5"><NavItem icon={<Settings />} label="Cài đặt" onClick={onInfo} /><button onClick={onInfo} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-[#f2f5f3]"><CircleUserRound className="size-5" /><span className="min-w-0 flex-1 truncate text-sm font-semibold">{email || 'Tài khoản Google'}</span><ChevronDown className="size-4 text-[#7b8982]" /></button><NavItem icon={<LogOut />} label="Đăng xuất" onClick={onSignOut} /></div>
   </aside>;
 }
 
