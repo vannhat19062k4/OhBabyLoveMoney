@@ -33,13 +33,13 @@ export const accounts = sqliteTable('accounts', {
 
 export const categories = sqliteTable('categories', {
   id: text('id').primaryKey(), workspaceId: text('workspace_id').notNull().references(() => workspaces.id),
-  parentId: text('parent_id'), name: text('name').notNull(), kind: text('kind', { enum: ['income', 'expense'] }).notNull(),
+  parentId: text('parent_id'), name: text('name').notNull(), kind: text('kind', { enum: ['income', 'expense', 'debt'] }).notNull(),
   icon: text('icon'), color: text('color'), ...auditColumns,
 }, (table) => [index('idx_categories_workspace_kind').on(table.workspaceId, table.kind)]);
 
 export const transactions = sqliteTable('transactions', {
   id: text('id').primaryKey(), workspaceId: text('workspace_id').notNull().references(() => workspaces.id),
-  kind: text('kind', { enum: ['income', 'expense', 'transfer', 'adjustment', 'debt_payment', 'refund'] }).notNull(),
+  kind: text('kind', { enum: ['income', 'expense', 'transfer', 'adjustment', 'lend', 'borrow', 'debt_repayment', 'debt_collection', 'refund'] }).notNull(),
   status: text('status', { enum: ['draft', 'pending_approval', 'posted', 'rejected', 'voided'] }).notNull(),
   categoryId: text('category_id').references(() => categories.id), merchant: text('merchant'), note: text('note'),
   occurredAt: integer('occurred_at', { mode: 'timestamp_ms' }).notNull(),
