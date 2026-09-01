@@ -1,4 +1,4 @@
-const CACHE_NAME = 'ohbabylovemoney-v1';
+const CACHE_NAME = 'ohbabylovemoney-v2';
 const APP_SHELL = ['/', '/manifest.webmanifest', '/icon-192.png', '/icon-512.png', '/logo-full.png'];
 
 self.addEventListener('install', (event) => {

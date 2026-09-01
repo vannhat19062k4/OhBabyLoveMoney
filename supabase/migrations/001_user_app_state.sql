@@ -20,3 +20,10 @@ create policy "Users can update their own financial data"
 on public.user_app_state for update
 using (auth.uid() = user_id)
 with check (auth.uid() = user_id);
+
+do $$
+begin
+  alter publication supabase_realtime add table public.user_app_state;
+exception
+  when duplicate_object then null;
+end $$;

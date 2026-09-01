@@ -20,6 +20,16 @@ export async function GET(request: Request) {
       setAll: (values) => values.forEach(({ name, value, options }) => cookieStore.set(name, value, options)),
     },
   });
-  const { error } = await supabase.auth.exchangeCodeForSession(code);
-  return NextResponse.redirect(new URL(error ? '/?auth_error=oauth' : next, url.origin));
+  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+  const response = NextResponse.redirect(new URL(error ? '/?auth_error=oauth' : next, url.origin));
+  if (data.session?.provider_token) {
+    response.cookies.set('ohbaby-google-token', data.session.provider_token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 55 * 60,
+    });
+  }
+  return response;
 }
