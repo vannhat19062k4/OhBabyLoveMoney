@@ -1,7 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
-import { ArrowDownLeft, ArrowUpRight, Bell, ChevronDown, CircleUserRound, CreditCard, HandCoins, Home, Inbox, LogOut, MailCheck, Plus, ScanLine, Search, Settings, TrendingDown, TrendingUp, WalletCards, X } from 'lucide-react';
+import { ArrowDownLeft, ArrowUpRight, Banknote, Bell, ChevronDown, CircleUserRound, CreditCard, HandCoins, Home, Inbox, Landmark, LogOut, MailCheck, Pencil, Plus, ScanLine, Search, Settings, TrendingDown, TrendingUp, WalletCards, X } from 'lucide-react';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -9,14 +9,15 @@ import { cashSignFor, debtActions, expenseOptions, incomeOptions, reportingBucke
 import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 
 type View = 'overview' | 'pending' | 'transactions' | 'accounts' | 'cards' | 'budgets' | 'debts';
-type Transaction = { id: string; icon: string; name: string; category: string; time: string; amount: number; group: TransactionGroup; reporting: 'income' | 'expense' | 'none'; debtAction?: DebtAction; debtId?: string; person?: string; due?: string };
+type Transaction = { id: string; icon: string; name: string; category: string; time: string; amount: number; group: TransactionGroup; reporting: 'income' | 'expense' | 'none'; accountId?: string; accountName?: string; debtAction?: DebtAction; debtId?: string; person?: string; due?: string };
 type Budget = { id: string; icon: string; name: string; spent: number; limit: number; color: string };
 type Debt = { id: string; person: string; type: 'owe' | 'lend'; total: number; paid: number; due: string };
-type PendingImport = { id: string; bank: string; merchant: string; amount: number; time: string; category: string; group: 'expense' | 'income' };
-type AppData = { transactions: Transaction[]; budgets: Budget[]; debts: Debt[]; pending: PendingImport[]; cardBalance: number; cardLimit: number };
+type FinancialAccount = { id: string; name: string; type: 'bank' | 'cash' | 'ewallet'; balance: number; color: string };
+type PendingImport = { id: string; bank: string; merchant: string; amount: number; time: string; category: string; group: 'expense' | 'income'; accountId?: string };
+type AppData = { transactions: Transaction[]; budgets: Budget[]; debts: Debt[]; accounts: FinancialAccount[]; pending: PendingImport[]; cardBalance: number; cardLimit: number };
 
 const money = (value: number) => `${new Intl.NumberFormat('vi-VN').format(value)} ₫`;
-const emptyData = (): AppData => ({ transactions: [], budgets: [], debts: [], pending: [], cardBalance: 0, cardLimit: 0 });
+const emptyData = (): AppData => ({ transactions: [], budgets: [], debts: [], accounts: [], pending: [], cardBalance: 0, cardLimit: 0 });
 const cleanLegacyDemoData = (data: Partial<AppData>): Partial<AppData> => {
   const transactions = (data.transactions ?? []).filter((item) => !['t1', 't2', 't3'].includes(item.id));
   const budgets = (data.budgets ?? []).filter((item) => !['b1', 'b2', 'b3'].includes(item.id));
@@ -31,10 +32,12 @@ export default function HomePage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [budgets, setBudgets] = useState<Budget[]>([]);
   const [debts, setDebts] = useState<Debt[]>([]);
+  const [accounts, setAccounts] = useState<FinancialAccount[]>([]);
   const [pending, setPending] = useState<PendingImport[]>([]);
   const [cardBalance, setCardBalance] = useState(0);
   const [cardLimit, setCardLimit] = useState(0);
-  const [modal, setModal] = useState<'transaction' | 'budget' | 'debt' | null>(null);
+  const [modal, setModal] = useState<'transaction' | 'budget' | 'debt' | 'account' | null>(null);
+  const [editingAccount, setEditingAccount] = useState<FinancialAccount | null>(null);
   const [notice, setNotice] = useState('');
   const [ready, setReady] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'loading' | 'synced' | 'local' | 'error'>('loading');
@@ -53,6 +56,7 @@ export default function HomePage() {
         })));
         setBudgets(safe.budgets ?? []);
         setDebts(safe.debts ?? []);
+        setAccounts(safe.accounts ?? []);
         setPending((safe.pending ?? []).map((item: PendingImport) => ({ ...item, group: item.group ?? 'expense' })));
         setCardBalance(typeof safe.cardBalance === 'number' ? safe.cardBalance : 0);
         setCardLimit(typeof safe.cardLimit === 'number' ? safe.cardLimit : 0);
@@ -104,7 +108,7 @@ export default function HomePage() {
 
   useEffect(() => {
     if (!ready) return;
-    const data = { transactions, budgets, debts, pending, cardBalance, cardLimit };
+    const data = { transactions, budgets, debts, accounts, pending, cardBalance, cardLimit };
     if (accountId) localStorage.setItem(`ohbabylovemoney-data-v3:${accountId}`, JSON.stringify(data));
     const timer = window.setTimeout(async () => {
       const supabase = getSupabaseBrowserClient();
@@ -118,7 +122,7 @@ export default function HomePage() {
       }
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [ready, authState, accountId, accountEmail, transactions, budgets, debts, pending, cardBalance, cardLimit]);
+  }, [ready, authState, accountId, accountEmail, transactions, budgets, debts, accounts, pending, cardBalance, cardLimit]);
 
   useEffect(() => {
     const supabase = getSupabaseBrowserClient();
@@ -129,6 +133,7 @@ export default function HomePage() {
       setTransactions(payload.transactions ?? []);
       setBudgets(payload.budgets ?? []);
       setDebts(payload.debts ?? []);
+      setAccounts(payload.accounts ?? []);
       setPending(payload.pending ?? []);
       setCardBalance(payload.cardBalance ?? 0);
       setCardLimit(payload.cardLimit ?? 0);
@@ -183,21 +188,22 @@ export default function HomePage() {
             {['budgets', 'debts', 'cards', 'accounts'].includes(view) && <div className="mb-5 flex gap-2 overflow-x-auto pb-1 lg:hidden">
               {([['budgets','Ngân sách'],['debts','Nợ & cho vay'],['cards','Thẻ tín dụng'],['accounts','Tài khoản']] as [View,string][]).map(([item,label]) => <button key={item} onClick={() => setView(item)} className={`shrink-0 rounded-full px-3.5 py-2 text-xs font-semibold ${view===item?'bg-[#17231f] text-white':'border border-[#d9dfdc] bg-white text-[#5f6e67]'}`}>{label}</button>)}
             </div>}
-            {view === 'overview' && <Overview transactions={transactions} budgets={budgets} pending={pending} onView={setView} onApprove={(id) => approvePending(id, pending, setPending, setTransactions, toast)} />}
+            {view === 'overview' && <Overview transactions={transactions} budgets={budgets} accounts={accounts} pending={pending} onView={setView} onApprove={(id) => approvePending(id, pending, accounts, setPending, setTransactions, setAccounts, toast)} />}
             {view === 'transactions' && <TransactionsView transactions={transactions} />}
-            {view === 'pending' && <PendingView pending={pending} gmailBusy={gmailBusy} onSyncGmail={syncGmail} onGroup={(id, group) => setPending((items) => items.map((item) => item.id === id ? { ...item, group, category: '' } : item))} onCategory={(id, category) => setPending((items) => items.map((item) => item.id === id ? { ...item, category } : item))} onApprove={(id) => approvePending(id, pending, setPending, setTransactions, toast)} onIgnore={(id) => { setPending((items) => items.filter((item) => item.id !== id)); toast('Đã bỏ qua email giao dịch'); }} />}
+            {view === 'pending' && <PendingView pending={pending} accounts={accounts} gmailBusy={gmailBusy} onSyncGmail={syncGmail} onGroup={(id, group) => setPending((items) => items.map((item) => item.id === id ? { ...item, group, category: '' } : item))} onCategory={(id, category) => setPending((items) => items.map((item) => item.id === id ? { ...item, category } : item))} onAccount={(id, sourceId) => setPending((items) => items.map((item) => item.id === id ? { ...item, accountId: sourceId } : item))} onApprove={(id) => approvePending(id, pending, accounts, setPending, setTransactions, setAccounts, toast)} onIgnore={(id) => { setPending((items) => items.filter((item) => item.id !== id)); toast('Đã bỏ qua email giao dịch'); }} />}
             {view === 'budgets' && <BudgetsView budgets={budgets} onAdd={() => setModal('budget')} onChangeLimit={(id, limit) => setBudgets((items) => items.map((item) => item.id === id ? { ...item, limit } : item))} />}
             {view === 'debts' && <DebtsView debts={debts} onAdd={() => setModal('debt')} onPay={(id, amount) => { setDebts((items) => items.map((item) => item.id === id ? { ...item, paid: Math.min(item.total, item.paid + amount) } : item)); toast('Đã cập nhật tiến độ thanh toán'); }} />}
             {view === 'cards' && <CardsView balance={cardBalance} limit={cardLimit} onLimit={setCardLimit} onSettle={() => { setCardBalance(0); toast('Đã tất toán. Hạn mức khả dụng đã phục hồi.'); }} />}
-            {view === 'accounts' && <AccountsView />}
+            {view === 'accounts' && <AccountsView accounts={accounts} onAdd={() => { setEditingAccount(null); setModal('account'); }} onEdit={(account) => { setEditingAccount(account); setModal('account'); }} />}
           </div>
         </section>
       </div>
 
       <MobileNav view={view} pending={pending.length} onView={setView} onAdd={() => setModal('transaction')} />
-      {modal && <Modal title={modal === 'transaction' ? 'Thêm giao dịch' : modal === 'budget' ? 'Tạo ngân sách danh mục' : 'Thêm khoản nợ / cho vay'} onClose={() => setModal(null)}>
-        {modal === 'transaction' && <TransactionForm debts={debts} onSave={(transaction) => {
+      {modal && <Modal title={modal === 'transaction' ? 'Thêm giao dịch' : modal === 'budget' ? 'Tạo ngân sách danh mục' : modal === 'account' ? (editingAccount ? 'Sửa tài khoản' : 'Thêm tài khoản') : 'Thêm khoản nợ / cho vay'} onClose={() => setModal(null)}>
+        {modal === 'transaction' && <TransactionForm debts={debts} accounts={accounts} onSave={(transaction) => {
           setTransactions((items) => [transaction, ...items]);
+          if (transaction.accountId) setAccounts((items) => items.map((account) => account.id === transaction.accountId ? { ...account, balance: account.balance + transaction.amount } : account));
           if (transaction.group === 'debt' && transaction.debtAction) {
             if (transaction.debtAction === 'lend' || transaction.debtAction === 'borrow') {
               setDebts((items) => [...items, { id: crypto.randomUUID(), person: transaction.person || 'Chưa đặt tên', type: transaction.debtAction === 'lend' ? 'lend' : 'owe', total: Math.abs(transaction.amount), paid: 0, due: transaction.due || 'Chưa đặt hạn' }]);
@@ -209,6 +215,7 @@ export default function HomePage() {
         }} />}
         {modal === 'budget' && <BudgetForm onSave={(budget) => { setBudgets((items) => [...items, budget]); setModal(null); toast('Đã tạo ngân sách danh mục'); }} />}
         {modal === 'debt' && <DebtForm onSave={(debt) => { setDebts((items) => [...items, debt]); setModal(null); toast('Đã thêm khoản nợ'); }} />}
+        {modal === 'account' && <AccountForm account={editingAccount} onSave={(account) => { setAccounts((items) => editingAccount ? items.map((item) => item.id === account.id ? account : item) : [...items, account]); setModal(null); setEditingAccount(null); toast(editingAccount ? 'Đã cập nhật số dư tài khoản' : 'Đã thêm tài khoản mới'); }} />}
       </Modal>}
     </main>
   );
@@ -259,13 +266,13 @@ function Sidebar({ view, pending, email, onView, onInfo, onSignOut }: { view: Vi
   </aside>;
 }
 
-function Overview({ transactions, budgets, pending, onView, onApprove }: { transactions: Transaction[]; budgets: Budget[]; pending: PendingImport[]; onView: (view: View) => void; onApprove: (id: string) => void }) {
+function Overview({ transactions, budgets, accounts, pending, onView, onApprove }: { transactions: Transaction[]; budgets: Budget[]; accounts: FinancialAccount[]; pending: PendingImport[]; onView: (view: View) => void; onApprove: (id: string) => void }) {
   const expense = Math.abs(transactions.filter((t) => t.reporting === 'expense').reduce((sum, item) => sum + item.amount, 0));
   const income = transactions.filter((t) => t.reporting === 'income').reduce((sum, item) => sum + item.amount, 0);
-  const netCashFlow = transactions.reduce((sum, item) => sum + item.amount, 0);
+  const totalBalance = accounts.reduce((sum, account) => sum + account.balance, 0);
   return <div className="space-y-5">
     <section className="overflow-hidden rounded-[26px] bg-[#17231f] p-5 text-white shadow-[0_18px_45px_rgba(23,35,31,.15)] md:p-7">
-      <div className="flex items-start justify-between gap-3"><div><p className="text-sm font-medium text-white/60">Dòng tiền đã ghi nhận</p><p className="mt-2 text-3xl font-bold tracking-[-0.04em] md:text-4xl">{money(netCashFlow)}</p></div><Badge className="bg-[#d8ff62] text-[#17231f]">Dữ liệu riêng tư</Badge></div>
+      <div className="flex items-start justify-between gap-3"><div><p className="text-sm font-medium text-white/60">Tổng số dư các tài khoản</p><p className="mt-2 text-3xl font-bold tracking-[-0.04em] md:text-4xl">{money(totalBalance)}</p></div><Badge className="bg-[#d8ff62] text-[#17231f]">{accounts.length} nguồn tiền</Badge></div>
       <div className="mt-8 grid grid-cols-2 gap-3 border-t border-white/10 pt-5 md:max-w-lg"><Metric icon={<TrendingUp />} label="Thu nhập" value={money(income)} positive /><Metric icon={<TrendingDown />} label="Chi tiêu" value={money(expense)} /></div>
       <div className="mt-6 flex h-12 items-end gap-2">{[32,54,38,70,47,84,64,92,75,100,86,72].map((height,index) => <span key={index} className="flex-1 rounded-t bg-[#d8ff62]/80" style={{height:`${height}%`,opacity:.35+index/20}} />)}</div>
     </section>
@@ -284,13 +291,13 @@ function Overview({ transactions, budgets, pending, onView, onApprove }: { trans
   </div>;
 }
 
-function PendingView({ pending, gmailBusy, onSyncGmail, onGroup, onCategory, onApprove, onIgnore }: { pending: PendingImport[]; gmailBusy: boolean; onSyncGmail: () => void; onGroup: (id: string, value: 'expense' | 'income') => void; onCategory: (id: string, value: string) => void; onApprove: (id: string) => void; onIgnore: (id: string) => void }) {
-  return <div className="space-y-4"><div className="flex flex-col gap-3 rounded-2xl border border-[#d9e7bd] bg-[#f4fae9] p-4 text-sm text-[#405521] sm:flex-row sm:items-center sm:justify-between"><div><strong>Quy tắc an toàn:</strong> Email chỉ tạo bản nháp. Bạn phải kiểm tra loại giao dịch và chọn danh mục trước khi phê duyệt.</div><Button variant="outline" onClick={onSyncGmail} disabled={gmailBusy} className="shrink-0 bg-white"><MailCheck />{gmailBusy ? 'Đang đọc Gmail…' : 'Lấy giao dịch từ Gmail'}</Button></div>{pending.length ? pending.map((item) => <PendingCard key={item.id} item={item} onGroup={(value) => onGroup(item.id,value)} onCategory={(value) => onCategory(item.id,value)} onApprove={() => onApprove(item.id)} onIgnore={() => onIgnore(item.id)} />) : <Empty text="Không còn giao dịch chờ duyệt. Nhấn Lấy giao dịch từ Gmail để kiểm tra email mới." />}</div>;
+function PendingView({ pending, accounts, gmailBusy, onSyncGmail, onGroup, onCategory, onAccount, onApprove, onIgnore }: { pending: PendingImport[]; accounts: FinancialAccount[]; gmailBusy: boolean; onSyncGmail: () => void; onGroup: (id: string, value: 'expense' | 'income') => void; onCategory: (id: string, value: string) => void; onAccount: (id: string, value: string) => void; onApprove: (id: string) => void; onIgnore: (id: string) => void }) {
+  return <div className="space-y-4"><div className="flex flex-col gap-3 rounded-2xl border border-[#d9e7bd] bg-[#f4fae9] p-4 text-sm text-[#405521] sm:flex-row sm:items-center sm:justify-between"><div><strong>Quy tắc an toàn:</strong> Email chỉ tạo bản nháp. Bạn phải chọn nguồn tiền và danh mục trước khi phê duyệt.</div><Button variant="outline" onClick={onSyncGmail} disabled={gmailBusy} className="shrink-0 bg-white"><MailCheck />{gmailBusy ? 'Đang đọc Gmail…' : 'Lấy giao dịch từ Gmail'}</Button></div>{pending.length ? pending.map((item) => <PendingCard key={item.id} item={item} accounts={accounts} onGroup={(value) => onGroup(item.id,value)} onCategory={(value) => onCategory(item.id,value)} onAccount={(value) => onAccount(item.id,value)} onApprove={() => onApprove(item.id)} onIgnore={() => onIgnore(item.id)} />) : <Empty text="Không còn giao dịch chờ duyệt. Nhấn Lấy giao dịch từ Gmail để kiểm tra email mới." />}</div>;
 }
 
-function PendingCard({ item, compact, onGroup, onCategory, onApprove, onIgnore }: { item: PendingImport; compact?: boolean; onGroup?: (value: 'expense' | 'income') => void; onCategory: (value: string) => void; onApprove: () => void; onIgnore: () => void }) {
+function PendingCard({ item, accounts = [], compact, onGroup, onCategory, onAccount, onApprove, onIgnore }: { item: PendingImport; accounts?: FinancialAccount[]; compact?: boolean; onGroup?: (value: 'expense' | 'income') => void; onCategory: (value: string) => void; onAccount?: (value: string) => void; onApprove: () => void; onIgnore: () => void }) {
   const options = item.group === 'income' ? incomeOptions : expenseOptions;
-  return <article className="rounded-2xl border border-[#eadfca] bg-[#fffbf2] p-4" data-testid={`pending-${item.id}`}><div className="flex gap-3"><div className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#7d4cff] text-xs font-black text-white">{item.bank.slice(0,2).toUpperCase()}</div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">{item.merchant}</p><p className="mt-.5 text-xs text-[#7b8982]">{item.bank} · {item.time}</p></div><p className="shrink-0 font-bold">{money(item.amount)}</p></div>{!compact && <div className="mt-4 grid gap-3 sm:grid-cols-2"><label className="block text-xs font-semibold text-[#5f6e67]">Loại giao dịch<select aria-label={`Loại ${item.merchant}`} value={item.group} onChange={(e) => onGroup?.(e.target.value as 'expense' | 'income')} className="mt-1.5 h-10 w-full rounded-xl border border-[#d9dfdc] bg-white px-3 text-sm"><option value="expense">Khoản Chi</option><option value="income">Khoản Thu</option></select></label><label className="block text-xs font-semibold text-[#5f6e67]">Danh mục<select aria-label={`Danh mục ${item.merchant}`} value={item.category} onChange={(e) => onCategory(e.target.value)} className="mt-1.5 h-10 w-full rounded-xl border border-[#d9dfdc] bg-white px-3 text-sm"><option value="">Chọn danh mục trước khi duyệt</option>{options.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}</select></label></div>}<div className="mt-4 flex flex-wrap gap-2"><Button size="sm" onClick={onApprove}>Phê duyệt</Button>{compact ? <Button size="sm" variant="outline" onClick={() => onCategory('')}>Phân loại</Button> : <Button size="sm" variant="ghost" onClick={onIgnore}>Bỏ qua</Button>}</div></div></div></article>;
+  return <article className="rounded-2xl border border-[#eadfca] bg-[#fffbf2] p-4" data-testid={`pending-${item.id}`}><div className="flex gap-3"><div className="grid size-10 shrink-0 place-items-center rounded-xl bg-[#7d4cff] text-xs font-black text-white">{item.bank.slice(0,2).toUpperCase()}</div><div className="min-w-0 flex-1"><div className="flex items-start justify-between gap-3"><div><p className="font-semibold">{item.merchant}</p><p className="mt-.5 text-xs text-[#7b8982]">{item.bank} · {item.time}</p></div><p className="shrink-0 font-bold">{money(item.amount)}</p></div>{!compact && <div className="mt-4 grid gap-3 sm:grid-cols-3"><label className="block text-xs font-semibold text-[#5f6e67]">Nguồn tiền<select aria-label={`Nguồn tiền ${item.merchant}`} value={item.accountId ?? ''} onChange={(e) => onAccount?.(e.target.value)} className="mt-1.5 h-10 w-full rounded-xl border border-[#d9dfdc] bg-white px-3 text-sm"><option value="">Chọn tài khoản</option>{accounts.map((account) => <option key={account.id} value={account.id}>{account.name}</option>)}</select></label><label className="block text-xs font-semibold text-[#5f6e67]">Loại giao dịch<select aria-label={`Loại ${item.merchant}`} value={item.group} onChange={(e) => onGroup?.(e.target.value as 'expense' | 'income')} className="mt-1.5 h-10 w-full rounded-xl border border-[#d9dfdc] bg-white px-3 text-sm"><option value="expense">Khoản Chi</option><option value="income">Khoản Thu</option></select></label><label className="block text-xs font-semibold text-[#5f6e67]">Danh mục<select aria-label={`Danh mục ${item.merchant}`} value={item.category} onChange={(e) => onCategory(e.target.value)} className="mt-1.5 h-10 w-full rounded-xl border border-[#d9dfdc] bg-white px-3 text-sm"><option value="">Chọn danh mục</option>{options.map((category) => <option key={category.value} value={category.value}>{category.label}</option>)}</select></label></div>}<div className="mt-4 flex flex-wrap gap-2"><Button size="sm" onClick={onApprove}>Phê duyệt</Button>{compact ? <Button size="sm" variant="outline" onClick={() => onCategory('')}>Phân loại</Button> : <Button size="sm" variant="ghost" onClick={onIgnore}>Bỏ qua</Button>}</div></div></div></article>;
 }
 
 function BudgetsView({ budgets, onAdd, onChangeLimit }: { budgets: Budget[]; onAdd: () => void; onChangeLimit: (id: string, limit: number) => void }) {
@@ -309,12 +316,15 @@ function CardsView({ balance, limit, onLimit, onSettle }: { balance: number; lim
   return <div className="grid gap-5 lg:grid-cols-[1.1fr_.9fr]"><section className="rounded-[26px] bg-gradient-to-br from-[#623cc5] to-[#332165] p-6 text-white shadow-xl"><div className="flex justify-between"><div><p className="text-xs uppercase tracking-[.15em] text-white/60">TPBank EVO Visa</p><p className="mt-7 text-2xl font-bold">•••• 1962</p></div><CreditCard className="size-8 text-white/70" /></div><div className="mt-10 grid grid-cols-2 gap-4"><div><p className="text-xs text-white/60">Dư nợ hiện tại</p><p className="font-bold">{money(balance)}</p></div><div><p className="text-xs text-white/60">Hạn mức khả dụng</p><p className="font-bold">{money(available)}</p></div></div></section><section className="surface"><h2 className="font-bold">Chu kỳ thanh toán</h2><div className="mt-4 grid grid-cols-2 gap-3"><Info label="Ngày chốt sao kê" value="Ngày 12 hàng tháng" /><Info label="Ngày đáo hạn" value="Ngày 27 hàng tháng" /></div><div className="mt-5 h-2 overflow-hidden rounded-full bg-[#edf1ef]"><div className="h-full bg-[#7b55c7]" style={{width:`${ratio}%`}} /></div><p className="mt-2 text-xs text-[#7b8982]">Đã dùng {ratio}% hạn mức</p><label className="mt-5 block text-xs font-semibold">Hạn mức thẻ<input aria-label="Hạn mức thẻ tín dụng" className="field mt-1.5" type="number" value={limit} onChange={(e) => onLimit(Number(e.target.value))} /></label><Button className="mt-4 w-full" disabled={balance===0} onClick={onSettle}>Tất toán dư nợ</Button><p className="mt-2 text-center text-[11px] text-[#7b8982]">Sau khi tất toán, hạn mức khả dụng tự động trở về đầy đủ.</p></section></div>;
 }
 
-function AccountsView() { return <div className="surface"><Empty text="Chưa có tài khoản tài chính nào. Các email ngân hàng chỉ tạo giao dịch chờ duyệt, không tự giả định số dư tài khoản." /></div>; }
+function AccountsView({ accounts, onAdd, onEdit }: { accounts: FinancialAccount[]; onAdd: () => void; onEdit: (account: FinancialAccount) => void }) {
+  const total = accounts.reduce((sum, account) => sum + account.balance, 0);
+  return <div className="space-y-5"><div className="flex items-center justify-between gap-3"><div><p className="text-sm text-[#708078]">Tổng số dư do bạn khai báo</p><p className="text-2xl font-bold">{money(total)}</p></div><Button onClick={onAdd}><Plus /> Thêm tài khoản</Button></div>{accounts.length ? <div className="grid gap-4 md:grid-cols-2">{accounts.map((account) => <article key={account.id} className="surface flex items-center gap-4"><div className="grid size-12 shrink-0 place-items-center rounded-2xl text-white" style={{background:account.color}}>{account.type === 'cash' ? <Banknote /> : <Landmark />}</div><div className="min-w-0 flex-1"><p className="truncate font-bold">{account.name}</p><p className="text-xs text-[#7b8982]">{account.type === 'cash' ? 'Tiền mặt' : account.type === 'ewallet' ? 'Ví điện tử' : 'Tài khoản ngân hàng'}</p><p className="mt-1 font-bold">{money(account.balance)}</p></div><Button variant="outline" size="icon" aria-label={`Sửa ${account.name}`} onClick={() => onEdit(account)}><Pencil /></Button></article>)}</div> : <div className="surface"><Empty text="Chưa có nguồn tiền. Hãy thêm tài khoản ngân hàng, ví điện tử hoặc tiền mặt." /></div>}</div>;
+}
 function TransactionsView({ transactions }: { transactions: Transaction[] }) { return <section className="surface"><SectionTitle title={`${transactions.length} giao dịch`} subtitle="Dữ liệu đã được ghi nhận" /><TransactionList transactions={transactions} /></section>; }
-function TransactionList({ transactions }: { transactions: Transaction[] }) { return <div className="divide-y divide-[#edf1ef]">{transactions.map((t) => <div key={t.id} className="flex items-center gap-3 py-3.5"><div className="grid size-10 place-items-center rounded-xl bg-[#f1f4f2] text-lg">{t.icon}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{t.name}</p><p className="text-xs text-[#7b8982]">{t.category} · {t.time}</p>{t.reporting === 'none' && <p className="mt-0.5 text-[10px] font-semibold text-[#7b55c7]">Biến động tài sản/công nợ · không tính thu chi</p>}</div><p className={`text-sm font-bold ${t.amount>0?'text-[#2c8a54]':''}`}>{t.amount>0?'+ ': '- '}{money(Math.abs(t.amount))}</p></div>)}</div>; }
+function TransactionList({ transactions }: { transactions: Transaction[] }) { return <div className="divide-y divide-[#edf1ef]">{transactions.map((t) => <div key={t.id} className="flex items-center gap-3 py-3.5"><div className="grid size-10 place-items-center rounded-xl bg-[#f1f4f2] text-lg">{t.icon}</div><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold">{t.name}</p><p className="text-xs text-[#7b8982]">{t.category} · {t.accountName || 'Chưa xác định nguồn'} · {t.time}</p>{t.reporting === 'none' && <p className="mt-0.5 text-[10px] font-semibold text-[#7b55c7]">Biến động tài sản/công nợ · không tính thu chi</p>}</div><p className={`text-sm font-bold ${t.amount>0?'text-[#2c8a54]':''}`}>{t.amount>0?'+ ': '- '}{money(Math.abs(t.amount))}</p></div>)}</div>; }
 
 function Modal({ title, children, onClose }: { title: string; children: React.ReactNode; onClose: () => void }) { return <div className="fixed inset-0 z-[70] grid place-items-end bg-black/35 p-0 backdrop-blur-sm sm:place-items-center sm:p-4" onMouseDown={(e) => { if(e.target===e.currentTarget) onClose(); }}><section role="dialog" aria-modal="true" aria-label={title} className="max-h-[92dvh] w-full overflow-auto rounded-t-[26px] bg-white p-5 shadow-2xl sm:max-w-lg sm:rounded-[26px]"><div className="mb-5 flex items-center justify-between"><h2 className="text-lg font-bold">{title}</h2><Button variant="ghost" size="icon" aria-label="Đóng" onClick={onClose}><X /></Button></div>{children}</section></div>; }
-function TransactionForm({ debts, onSave }: { debts: Debt[]; onSave: (item: Transaction) => void }) {
+function TransactionForm({ debts, accounts, onSave }: { debts: Debt[]; accounts: FinancialAccount[]; onSave: (item: Transaction) => void }) {
   const [name,setName]=useState('');
   const [amount,setAmount]=useState('');
   const [category,setCategory]=useState(expenseOptions[0].value);
@@ -324,6 +334,7 @@ function TransactionForm({ debts, onSave }: { debts: Debt[]; onSave: (item: Tran
   const [person,setPerson]=useState('');
   const [debtId,setDebtId]=useState('');
   const [due,setDue]=useState('');
+  const [sourceAccountId,setSourceAccountId]=useState(accounts[0]?.id ?? '');
   const matchingDebts = debts.filter((debt) => debt.total > debt.paid && (debtAction === 'repay' ? debt.type === 'owe' : debt.type === 'lend'));
   const activeDebt = debts.find((debt) => debt.id === debtId);
   const options = group === 'income' ? incomeOptions : expenseOptions;
@@ -335,7 +346,7 @@ function TransactionForm({ debts, onSave }: { debts: Debt[]; onSave: (item: Tran
 
   return <form onSubmit={(e)=>{
     e.preventDefault();
-    if(!amount) return;
+    if(!amount || !sourceAccountId) return;
     const selectedDebt = activeDebt;
     const actionLabel = debtActions.find((item) => item.value === debtAction)?.label || 'Vay/Nợ';
     const transactionName = group === 'debt' ? `${actionLabel}${selectedDebt ? ` · ${selectedDebt.person}` : person ? ` · ${person}` : ''}` : name;
@@ -343,9 +354,11 @@ function TransactionForm({ debts, onSave }: { debts: Debt[]; onSave: (item: Tran
     const selectedCategory = group === 'debt' ? actionLabel : category === '__custom__' ? customCategory.trim() : category;
     if (!selectedCategory) return;
     const reporting = reportingBucketFor(group, selectedCategory);
-    onSave({ id:crypto.randomUUID(), icon:group==='income'?'💼':group==='expense'?'💳':'🤝', name:transactionName, category:selectedCategory, time:'Vừa xong', amount:cashSignFor(group,debtAction)*Number(amount), group, reporting, debtAction:group==='debt'?debtAction:undefined, debtId:debtId||undefined, person:person||undefined, due:due?new Date(`${due}T00:00:00`).toLocaleDateString('vi-VN'):undefined });
+    const sourceAccount = accounts.find((account) => account.id === sourceAccountId);
+    onSave({ id:crypto.randomUUID(), icon:group==='income'?'💼':group==='expense'?'💳':'🤝', name:transactionName, category:selectedCategory, time:'Vừa xong', amount:cashSignFor(group,debtAction)*Number(amount), group, reporting, accountId:sourceAccountId, accountName:sourceAccount?.name, debtAction:group==='debt'?debtAction:undefined, debtId:debtId||undefined, person:person||undefined, due:due?new Date(`${due}T00:00:00`).toLocaleDateString('vi-VN'):undefined });
   }} className="space-y-4">
     <Field label="Loại giao dịch"><select aria-label="Loại giao dịch" className="field" value={group} onChange={(e)=>changeGroup(e.target.value as TransactionGroup)}><option value="expense">Khoản Chi</option><option value="income">Khoản Thu</option><option value="debt">Vay/Nợ</option></select></Field>
+    <Field label="Ngân hàng / nguồn tiền"><select aria-label="Nguồn tiền giao dịch" className="field" value={sourceAccountId} onChange={(e)=>setSourceAccountId(e.target.value)} required><option value="">Chọn nguồn tiền</option>{accounts.map((account)=><option key={account.id} value={account.id}>{account.name} · {money(account.balance)}</option>)}</select>{accounts.length === 0 && <p className="mt-2 text-xs font-normal text-[#a34b3f]">Hãy vào mục Tài khoản để thêm ngân hàng, ví hoặc tiền mặt trước.</p>}</Field>
     {group !== 'debt' && <><Field label="Nội dung"><input className="field" placeholder={group==='income'?'Ví dụ: Lương tháng 9':'Ví dụ: Ăn trưa'} value={name} onChange={(e)=>setName(e.target.value)} required /></Field><Field label="Danh mục"><select aria-label="Danh mục giao dịch" className="field" value={category} onChange={(e)=>setCategory(e.target.value)}>{options.map((item)=><option key={item.value} value={item.value}>{item.label}</option>)}<option value="__custom__">＋ Danh mục tùy chỉnh</option></select></Field>{category==='__custom__'&&<Field label="Tên danh mục mới"><input aria-label="Tên danh mục mới" className="field" placeholder="Nhập tên danh mục" value={customCategory} onChange={(e)=>setCustomCategory(e.target.value)} required /></Field>}</>}
     {group === 'debt' && <><Field label="Nghiệp vụ công nợ"><select aria-label="Nghiệp vụ công nợ" className="field" value={debtAction} onChange={(e)=>{setDebtAction(e.target.value as DebtAction);setDebtId('');}}>{debtActions.map((item)=><option key={item.value} value={item.value}>{item.label}</option>)}</select></Field>{['lend','borrow'].includes(debtAction)?<><Field label="Người liên quan"><input className="field" placeholder="Tên người" value={person} onChange={(e)=>setPerson(e.target.value)} required /></Field><Field label="Ngày đến hạn"><input className="field" type="date" value={due} onChange={(e)=>setDue(e.target.value)} required /></Field></>:<Field label={debtAction==='repay'?'Khoản bạn cần trả':'Khoản bạn cần thu'}><select aria-label="Khoản công nợ" className="field" value={debtId} onChange={(e)=>setDebtId(e.target.value)} required><option value="">Chọn người và khoản nợ</option>{matchingDebts.map((debt)=><option key={debt.id} value={debt.id}>{debt.person} · còn {money(debt.total-debt.paid)}</option>)}</select></Field>}</>}
     <Field label="Số tiền"><input className="field" type="number" min="1" max={activeDebt ? activeDebt.total-activeDebt.paid : undefined} inputMode="numeric" placeholder="0" value={amount} onChange={(e)=>setAmount(e.target.value)} required /></Field>
@@ -353,6 +366,13 @@ function TransactionForm({ debts, onSave }: { debts: Debt[]; onSave: (item: Tran
     {(category==='Tiền chuyển đi'||category==='Tiền chuyển đến')&&group!=='debt'&&<div className="rounded-xl bg-[#fff7df] p-3 text-xs text-[#735b16]">Chuyển tiền chỉ làm đổi vị trí tiền giữa các tài khoản, không tính vào báo cáo thu nhập hoặc chi tiêu.</div>}
     <Button type="submit" className="h-11 w-full">Lưu giao dịch</Button>
   </form>;
+}
+function AccountForm({ account, onSave }: { account: FinancialAccount | null; onSave: (item: FinancialAccount) => void }) {
+  const [name,setName]=useState(account?.name ?? '');
+  const [type,setType]=useState<FinancialAccount['type']>(account?.type ?? 'bank');
+  const [balance,setBalance]=useState(account ? String(account.balance) : '');
+  const colors: Record<FinancialAccount['type'], string> = { bank: '#477dd1', cash: '#2c8a54', ewallet: '#d92b72' };
+  return <form onSubmit={(event)=>{event.preventDefault(); if(!name.trim() || balance==='') return; onSave({id:account?.id ?? crypto.randomUUID(),name:name.trim(),type,balance:Number(balance),color:account?.color ?? colors[type]});}} className="space-y-4"><Field label="Loại nguồn tiền"><select className="field" value={type} onChange={(event)=>setType(event.target.value as FinancialAccount['type'])}><option value="bank">Tài khoản ngân hàng</option><option value="ewallet">Ví điện tử</option><option value="cash">Tiền mặt</option></select></Field><Field label="Tên tài khoản"><input className="field" placeholder={type==='cash'?'Ví dụ: Tiền mặt':'Ví dụ: TPBank thanh toán'} value={name} onChange={(event)=>setName(event.target.value)} required /></Field><Field label="Số dư hiện tại"><input className="field" type="number" inputMode="numeric" placeholder="0" value={balance} onChange={(event)=>setBalance(event.target.value)} required /><p className="mt-2 text-xs font-normal text-[#7b8982]">Bạn có thể sửa số dư bất kỳ lúc nào để đối soát với ngân hàng thực tế.</p></Field><Button type="submit" className="h-11 w-full">{account ? 'Lưu thay đổi' : 'Thêm nguồn tiền'}</Button></form>;
 }
 function BudgetForm({ onSave }: { onSave: (item: Budget) => void }) { const [name,setName]=useState(''); const [limit,setLimit]=useState(''); return <form onSubmit={(e)=>{e.preventDefault(); if(!name||!limit)return; onSave({id:crypto.randomUUID(),name,limit:Number(limit),spent:0,icon:'🎯',color:'#2c8a54'});}} className="space-y-4"><Field label="Tên danh mục"><input className="field" placeholder="Ví dụ: Sức khỏe" value={name} onChange={(e)=>setName(e.target.value)} required /></Field><Field label="Ngân sách mỗi tháng"><input className="field" type="number" inputMode="numeric" placeholder="0" value={limit} onChange={(e)=>setLimit(e.target.value)} required /></Field><Button type="submit" className="h-11 w-full">Tạo ngân sách</Button></form>; }
 function DebtForm({ onSave }: { onSave: (item: Debt) => void }) { const [person,setPerson]=useState(''); const [total,setTotal]=useState(''); const [type,setType]=useState<'owe'|'lend'>('owe'); const [due,setDue]=useState(''); return <form onSubmit={(e)=>{e.preventDefault(); if(!person||!total||!due)return; onSave({id:crypto.randomUUID(),person,total:Number(total),paid:0,type,due:new Date(`${due}T00:00:00`).toLocaleDateString('vi-VN')});}} className="space-y-4"><Field label="Hình thức"><select className="field" value={type} onChange={(e)=>setType(e.target.value as 'owe'|'lend')}><option value="owe">Tôi đang nợ</option><option value="lend">Tôi cho vay</option></select></Field><Field label="Người liên quan"><input className="field" placeholder="Tên người" value={person} onChange={(e)=>setPerson(e.target.value)} required /></Field><Field label="Tổng số tiền"><input className="field" type="number" inputMode="numeric" value={total} onChange={(e)=>setTotal(e.target.value)} required /></Field><Field label="Ngày phải trả"><input className="field" type="date" value={due} onChange={(e)=>setDue(e.target.value)} required /></Field><Button type="submit" className="h-11 w-full">Lưu khoản nợ</Button></form>; }
@@ -367,7 +387,9 @@ function Info({label,value}:{label:string;value:string}) { return <div className
 function Field({label,children}:{label:string;children:React.ReactNode}) { return <label className="block text-sm font-semibold text-[#435149]">{label}<div className="mt-1.5">{children}</div></label>; }
 function Empty({text}:{text:string}) { return <div className="rounded-2xl bg-[#eff8e8] p-5 text-center text-sm font-medium text-[#416324]">{text}</div>; }
 
-function approvePending(id: string, pending: PendingImport[], setPending: React.Dispatch<React.SetStateAction<PendingImport[]>>, setTransactions: React.Dispatch<React.SetStateAction<Transaction[]>>, toast: (message:string)=>void) {
-  const item=pending.find((entry)=>entry.id===id); if(!item) return; if(!item.category){toast('Vui lòng chọn danh mục trước khi phê duyệt'); return;}
-  setTransactions((items)=>[{id:crypto.randomUUID(),icon:item.group==='income'?'💼':'💳',name:item.merchant,category:item.category,time:item.time,amount:cashSignFor(item.group)*item.amount,group:item.group,reporting:reportingBucketFor(item.group,item.category)},...items]); setPending((items)=>items.filter((entry)=>entry.id!==id)); toast(`Đã ghi nhận ${item.merchant} vào ${item.category}`);
+function approvePending(id: string, pending: PendingImport[], accounts: FinancialAccount[], setPending: React.Dispatch<React.SetStateAction<PendingImport[]>>, setTransactions: React.Dispatch<React.SetStateAction<Transaction[]>>, setAccounts: React.Dispatch<React.SetStateAction<FinancialAccount[]>>, toast: (message:string)=>void) {
+  const item=pending.find((entry)=>entry.id===id); if(!item) return; if(!item.category){toast('Vui lòng chọn danh mục trước khi phê duyệt'); return;} if(!item.accountId){toast('Vui lòng chọn ngân hàng hoặc nguồn tiền'); return;}
+  const account=accounts.find((entry)=>entry.id===item.accountId); if(!account){toast('Nguồn tiền không còn tồn tại'); return;}
+  const signedAmount=cashSignFor(item.group)*item.amount;
+  setTransactions((items)=>[{id:crypto.randomUUID(),icon:item.group==='income'?'💼':'💳',name:item.merchant,category:item.category,time:item.time,amount:signedAmount,group:item.group,reporting:reportingBucketFor(item.group,item.category),accountId:account.id,accountName:account.name},...items]); setAccounts((items)=>items.map((entry)=>entry.id===account.id?{...entry,balance:entry.balance+signedAmount}:entry)); setPending((items)=>items.filter((entry)=>entry.id!==id)); toast(`Đã ghi nhận ${item.merchant} vào ${account.name}`);
 }
