@@ -158,6 +158,20 @@ export default function HomePage() {
     }
   };
 
+  const reconnectGmail = async () => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+        scopes: 'openid email profile https://www.googleapis.com/auth/gmail.readonly',
+        queryParams: { access_type: 'offline', prompt: 'consent select_account', include_granted_scopes: 'true' },
+      },
+    });
+    if (error) toast(`Không thể cấp lại quyền Gmail: ${error.message}`);
+  };
+
   const toast = (message: string) => {
     setNotice(message);
     window.setTimeout(() => setNotice(''), 2600);
@@ -190,7 +204,7 @@ export default function HomePage() {
             </div>}
             {view === 'overview' && <Overview transactions={transactions} budgets={budgets} accounts={accounts} pending={pending} onView={setView} onApprove={(id) => approvePending(id, pending, accounts, setPending, setTransactions, setAccounts, toast)} />}
             {view === 'transactions' && <TransactionsView transactions={transactions} />}
-            {view === 'pending' && <PendingView pending={pending} accounts={accounts} gmailBusy={gmailBusy} onSyncGmail={syncGmail} onGroup={(id, group) => setPending((items) => items.map((item) => item.id === id ? { ...item, group, category: '' } : item))} onCategory={(id, category) => setPending((items) => items.map((item) => item.id === id ? { ...item, category } : item))} onAccount={(id, sourceId) => setPending((items) => items.map((item) => item.id === id ? { ...item, accountId: sourceId } : item))} onApprove={(id) => approvePending(id, pending, accounts, setPending, setTransactions, setAccounts, toast)} onIgnore={(id) => { setPending((items) => items.filter((item) => item.id !== id)); toast('Đã bỏ qua email giao dịch'); }} />}
+            {view === 'pending' && <PendingView pending={pending} accounts={accounts} gmailBusy={gmailBusy} onSyncGmail={syncGmail} onReconnectGmail={reconnectGmail} onGroup={(id, group) => setPending((items) => items.map((item) => item.id === id ? { ...item, group, category: '' } : item))} onCategory={(id, category) => setPending((items) => items.map((item) => item.id === id ? { ...item, category } : item))} onAccount={(id, sourceId) => setPending((items) => items.map((item) => item.id === id ? { ...item, accountId: sourceId } : item))} onApprove={(id) => approvePending(id, pending, accounts, setPending, setTransactions, setAccounts, toast)} onIgnore={(id) => { setPending((items) => items.filter((item) => item.id !== id)); toast('Đã bỏ qua email giao dịch'); }} />}
             {view === 'budgets' && <BudgetsView budgets={budgets} onAdd={() => setModal('budget')} onChangeLimit={(id, limit) => setBudgets((items) => items.map((item) => item.id === id ? { ...item, limit } : item))} />}
             {view === 'debts' && <DebtsView debts={debts} onAdd={() => setModal('debt')} onPay={(id, amount) => { setDebts((items) => items.map((item) => item.id === id ? { ...item, paid: Math.min(item.total, item.paid + amount) } : item)); toast('Đã cập nhật tiến độ thanh toán'); }} />}
             {view === 'cards' && <CardsView balance={cardBalance} limit={cardLimit} onLimit={setCardLimit} onSettle={() => { setCardBalance(0); toast('Đã tất toán. Hạn mức khả dụng đã phục hồi.'); }} />}
@@ -249,7 +263,8 @@ function GoogleSignIn({ configured }: { configured: boolean }) {
 
           queryParams: {
             access_type: 'offline',
-            prompt: 'consent',
+            prompt: 'consent select_account',
+            include_granted_scopes: 'true',
           },
         },
       });
@@ -308,8 +323,8 @@ function Overview({ transactions, budgets, accounts, pending, onView, onApprove 
   </div>;
 }
 
-function PendingView({ pending, accounts, gmailBusy, onSyncGmail, onGroup, onCategory, onAccount, onApprove, onIgnore }: { pending: PendingImport[]; accounts: FinancialAccount[]; gmailBusy: boolean; onSyncGmail: () => void; onGroup: (id: string, value: 'expense' | 'income') => void; onCategory: (id: string, value: string) => void; onAccount: (id: string, value: string) => void; onApprove: (id: string) => void; onIgnore: (id: string) => void }) {
-  return <div className="space-y-4"><div className="flex flex-col gap-3 rounded-2xl border border-[#d9e7bd] bg-[#f4fae9] p-4 text-sm text-[#405521] sm:flex-row sm:items-center sm:justify-between"><div><strong>Quy tắc an toàn:</strong> Email chỉ tạo bản nháp. Bạn phải chọn nguồn tiền và danh mục trước khi phê duyệt.</div><Button variant="outline" onClick={onSyncGmail} disabled={gmailBusy} className="shrink-0 bg-white"><MailCheck />{gmailBusy ? 'Đang đọc Gmail…' : 'Lấy giao dịch từ Gmail'}</Button></div>{pending.length ? pending.map((item) => <PendingCard key={item.id} item={item} accounts={accounts} onGroup={(value) => onGroup(item.id, value)} onCategory={(value) => onCategory(item.id, value)} onAccount={(value) => onAccount(item.id, value)} onApprove={() => onApprove(item.id)} onIgnore={() => onIgnore(item.id)} />) : <Empty text="Không còn giao dịch chờ duyệt. Nhấn Lấy giao dịch từ Gmail để kiểm tra email mới." />}</div>;
+function PendingView({ pending, accounts, gmailBusy, onSyncGmail, onReconnectGmail, onGroup, onCategory, onAccount, onApprove, onIgnore }: { pending: PendingImport[]; accounts: FinancialAccount[]; gmailBusy: boolean; onSyncGmail: () => void; onReconnectGmail: () => void; onGroup: (id: string, value: 'expense' | 'income') => void; onCategory: (id: string, value: string) => void; onAccount: (id: string, value: string) => void; onApprove: (id: string) => void; onIgnore: (id: string) => void }) {
+  return <div className="space-y-4"><div className="flex flex-col gap-3 rounded-2xl border border-[#d9e7bd] bg-[#f4fae9] p-4 text-sm text-[#405521] sm:flex-row sm:items-center sm:justify-between"><div><strong>Quy tắc an toàn:</strong> Email chỉ tạo bản nháp. Bạn phải chọn nguồn tiền và danh mục trước khi phê duyệt.</div><div className="flex shrink-0 flex-wrap gap-2"><Button variant="outline" onClick={onReconnectGmail} className="bg-white">Cấp lại quyền Gmail</Button><Button variant="outline" onClick={onSyncGmail} disabled={gmailBusy} className="bg-white"><MailCheck />{gmailBusy ? 'Đang đọc Gmail…' : 'Lấy giao dịch từ Gmail'}</Button></div></div>{pending.length ? pending.map((item) => <PendingCard key={item.id} item={item} accounts={accounts} onGroup={(value) => onGroup(item.id, value)} onCategory={(value) => onCategory(item.id, value)} onAccount={(value) => onAccount(item.id, value)} onApprove={() => onApprove(item.id)} onIgnore={() => onIgnore(item.id)} />) : <Empty text="Không còn giao dịch chờ duyệt. Nhấn Lấy giao dịch từ Gmail để kiểm tra email mới." />}</div>;
 }
 
 function PendingCard({ item, accounts = [], compact, onGroup, onCategory, onAccount, onApprove, onIgnore }: { item: PendingImport; accounts?: FinancialAccount[]; compact?: boolean; onGroup?: (value: 'expense' | 'income') => void; onCategory: (value: string) => void; onAccount?: (value: string) => void; onApprove: () => void; onIgnore: () => void }) {

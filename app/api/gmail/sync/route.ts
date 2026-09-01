@@ -23,6 +23,12 @@ export async function POST() {
   const providerToken = cookieStore.get('ohbaby-google-token')?.value;
   if (!providerToken) return NextResponse.json({ error: 'Hãy đăng xuất rồi đăng nhập lại để cấp quyền Gmail chỉ đọc.' }, { status: 401 });
 
+  const tokenInfoResponse = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(providerToken)}`, { cache: 'no-store' });
+  const tokenInfo = tokenInfoResponse.ok ? await tokenInfoResponse.json() as { scope?: string } : null;
+  if (!tokenInfo?.scope?.split(' ').includes('https://www.googleapis.com/auth/gmail.readonly')) {
+    return NextResponse.json({ code: 'GMAIL_SCOPE_MISSING', error: 'Token Google hiện tại chưa có quyền gmail.readonly. Nhấn “Cấp lại quyền Gmail” rồi chọn Cho phép.' }, { status: 403 });
+  }
+
   const listUrl = new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages');
   listUrl.searchParams.set('maxResults', '40');
   listUrl.searchParams.set('q', 'newer_than:30d');
@@ -30,7 +36,16 @@ export async function POST() {
   const listResponse = await fetch(listUrl, { headers, cache: 'no-store' });
   if (!listResponse.ok) {
     const status = listResponse.status;
-    return NextResponse.json({ error: status === 403 ? 'Google chưa cấp quyền Gmail. Hãy bật Gmail API và đăng nhập lại.' : 'Quyền Gmail đã hết hạn. Hãy đăng nhập lại.' }, { status });
+    const details = await listResponse.json().catch(() => null) as { error?: { message?: string; errors?: Array<{ reason?: string }> } } | null;
+    const reason = details?.error?.errors?.[0]?.reason ?? '';
+    const message = details?.error?.message ?? '';
+    if (status === 403 && (reason === 'accessNotConfigured' || /has not been used|is disabled/i.test(message))) {
+      return NextResponse.json({ code: 'GMAIL_API_DISABLED', error: 'Gmail API chưa được bật trong đúng Google Cloud project của OAuth Client. Hãy bật Gmail API trong project đang chứa Client ID.' }, { status });
+    }
+    if (status === 403 && (reason === 'insufficientPermissions' || /insufficient.*scope|permission/i.test(message))) {
+      return NextResponse.json({ code: 'GMAIL_SCOPE_MISSING', error: 'Google đã đăng nhập nhưng access token chưa có quyền gmail.readonly. Hãy cấp lại quyền Gmail.' }, { status });
+    }
+    return NextResponse.json({ code: 'GMAIL_API_ERROR', error: status === 401 ? 'Quyền Gmail đã hết hạn. Hãy cấp lại quyền Gmail.' : `Gmail API từ chối yêu cầu${message ? `: ${message}` : '.'}` }, { status });
   }
 
   const list = await listResponse.json() as { messages?: Array<{ id: string }> };
