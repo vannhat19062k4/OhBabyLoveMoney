@@ -43,12 +43,12 @@ export default function HomePage() {
   const [modal, setModal] = useState<'transaction' | 'budget' | 'debt' | null>(null);
   const [notice, setNotice] = useState('');
   const [ready, setReady] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<'loading' | 'synced' | 'local' | 'error'>('loading');
+  const [accountEmail, setAccountEmail] = useState('');
 
   useEffect(() => {
-    try {
-      const saved = localStorage.getItem('ohbabylovemoney-data-v2');
-      if (saved) {
-        const data = JSON.parse(saved);
+    const applyData = (data: any) => {
+      if (!data) return;
         if (data.transactions) setTransactions(data.transactions.map((item: Transaction) => ({
           ...item,
           group: item.group ?? (item.amount > 0 ? 'income' : 'expense'),
@@ -59,13 +59,46 @@ export default function HomePage() {
         if (data.pending) setPending(data.pending.map((item: PendingImport) => ({ ...item, group: item.group ?? 'expense' })));
         if (typeof data.cardBalance === 'number') setCardBalance(data.cardBalance);
         if (typeof data.cardLimit === 'number') setCardLimit(data.cardLimit);
+    };
+
+    const load = async () => {
+      let localData: any = null;
+      try {
+        const saved = localStorage.getItem('ohbabylovemoney-data-v2');
+        if (saved) localData = JSON.parse(saved);
+      } catch { /* bộ nhớ cục bộ chỉ là bản dự phòng */ }
+
+      try {
+        const response = await fetch('/api/data', { cache: 'no-store' });
+        if (!response.ok) throw new Error('cloud_unavailable');
+        const cloud = await response.json();
+        setAccountEmail(cloud.email || '');
+        applyData(cloud.data ?? localData);
+        setSyncStatus('synced');
+      } catch {
+        applyData(localData);
+        setSyncStatus(localData ? 'local' : 'error');
       }
-    } catch { /* giữ dữ liệu mẫu nếu bộ nhớ lỗi */ }
-    setReady(true);
+      setReady(true);
+    };
+
+    void load();
   }, []);
 
   useEffect(() => {
-    if (ready) localStorage.setItem('ohbabylovemoney-data-v2', JSON.stringify({ transactions, budgets, debts, pending, cardBalance, cardLimit }));
+    if (!ready) return;
+    const data = { transactions, budgets, debts, pending, cardBalance, cardLimit };
+    localStorage.setItem('ohbabylovemoney-data-v2', JSON.stringify(data));
+    const timer = window.setTimeout(async () => {
+      try {
+        const response = await fetch('/api/data', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ data }) });
+        if (!response.ok) throw new Error('sync_failed');
+        setSyncStatus('synced');
+      } catch {
+        setSyncStatus('local');
+      }
+    }, 450);
+    return () => window.clearTimeout(timer);
   }, [ready, transactions, budgets, debts, pending, cardBalance, cardLimit]);
 
   const toast = (message: string) => {
@@ -84,6 +117,7 @@ export default function HomePage() {
           <header className="flex h-16 items-center justify-between border-b border-[#dfe6e2] bg-white/90 px-5 backdrop-blur md:px-8">
             <div><p className="text-xs font-semibold text-[#7b8982]">OhBabyLoveMoney</p><h1 className="text-lg font-bold tracking-tight">{title[view]}</h1></div>
             <div className="flex items-center gap-2">
+              <button onClick={() => toast(accountEmail ? `Cloud: ${accountEmail}` : 'Đang dùng bản lưu dự phòng trên thiết bị')} className={`hidden rounded-full px-3 py-1.5 text-xs font-semibold md:block ${syncStatus==='synced'?'bg-[#eaf7ee] text-[#257545]':'bg-[#fff1d7] text-[#7a5410]'}`}>{syncStatus==='loading'?'Đang tải…':syncStatus==='synced'?'Cloud đã đồng bộ':'Đang lưu trên máy'}</button>
               <Button variant="outline" size="icon" aria-label="Tìm kiếm" onClick={() => toast('Tìm kiếm sẽ có ở bản tiếp theo')}><Search /></Button>
               <Button variant="outline" size="icon" aria-label="Thông báo" onClick={() => setView('pending')} className="relative"><Bell />{pending.length > 0 && <span className="absolute right-1.5 top-1.5 size-2 rounded-full bg-[#ff665a]" />}</Button>
               <Button data-testid="add-transaction" onClick={() => setModal('transaction')} className="hidden bg-[#17231f] text-white sm:flex"><Plus /> Thêm giao dịch</Button>

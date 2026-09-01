@@ -10,6 +10,14 @@ export const users = sqliteTable('users', {
   baseCurrency: text('base_currency').notNull().default('VND'), ...auditColumns,
 }, (table) => [uniqueIndex('idx_users_email').on(table.email)]);
 
+export const userAppState = sqliteTable('user_app_state', {
+  userId: text('user_id').primaryKey(),
+  email: text('email'),
+  payload: text('payload').notNull(),
+  version: integer('version').notNull().default(1),
+  updatedAt: integer('updated_at', { mode: 'timestamp_ms' }).notNull(),
+});
+
 export const workspaces = sqliteTable('workspaces', {
   id: text('id').primaryKey(), name: text('name').notNull(), ownerId: text('owner_id').notNull().references(() => users.id),
   baseCurrency: text('base_currency').notNull().default('VND'), ...auditColumns,
