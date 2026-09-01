@@ -1,5 +1,10 @@
 {
   "$schema": "https://openapi.vercel.sh/vercel.json",
   "framework": "nextjs",
-  "buildCommand": "npm run build"
+  "buildCommand": "npm run build",
+  "env": {
+    "NEXT_PUBLIC_SUPABASE_URL": "https://rzyktxxjofijlumhiyui.supabase.co",
+    "NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY": "sb_publishable_KTC9aVKppwpxSG6EYJCGGw_Ol40O1jZ",
+    "NEXT_PUBLIC_SITE_URL": "https://ohbabylovemoney.vercel.app"
+  }
 }
