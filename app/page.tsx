@@ -261,7 +261,6 @@ function GoogleSignIn({ configured }: { configured: boolean }) {
       );
     }
   };
-};
 
 const params = typeof window !== 'undefined' ? new URLSearchParams(window.location.search) : null;
 const callbackError = params?.get('auth_error');
