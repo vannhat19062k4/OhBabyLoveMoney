@@ -75,7 +75,7 @@ export default function HomePage() {
     <main className="min-h-dvh bg-[#f5f7f6] text-[#17231f]">
       {notice && <div role="status" className="fixed left-1/2 top-4 z-[80] w-max max-w-[90vw] -translate-x-1/2 rounded-full bg-[#17231f] px-4 py-2.5 text-center text-sm font-medium text-white shadow-xl">{notice}</div>}
       <div className="mx-auto grid min-h-dvh max-w-[1480px] grid-cols-1 lg:grid-cols-[250px_1fr]">
-        <Sidebar view={view} pending={pending.length} onView={setView} />
+        <Sidebar view={view} pending={pending.length} onView={setView} onInfo={() => toast('Cài đặt tài khoản sẽ mở sau khi kết nối Google')} />
         <section className="min-w-0 pb-24 lg:pb-8">
           <header className="flex h-16 items-center justify-between border-b border-[#dfe6e2] bg-white/90 px-5 backdrop-blur md:px-8">
             <div><p className="text-xs font-semibold text-[#7b8982]">OhBabyLoveMoney</p><h1 className="text-lg font-bold tracking-tight">{title[view]}</h1></div>
@@ -111,7 +111,7 @@ export default function HomePage() {
   );
 }
 
-function Sidebar({ view, pending, onView }: { view: View; pending: number; onView: (view: View) => void }) {
+function Sidebar({ view, pending, onView, onInfo }: { view: View; pending: number; onView: (view: View) => void; onInfo: () => void }) {
   return <aside className="hidden border-r border-[#dfe6e2] bg-white px-5 py-7 lg:flex lg:flex-col">
     <div className="mb-9 flex items-center gap-3 px-2"><div className="grid size-10 place-items-center rounded-2xl bg-[#d8ff62] text-xl font-black">O</div><div><p className="font-bold leading-none">OhBaby</p><p className="mt-1 text-xs font-semibold text-[#708078]">LoveMoney</p></div></div>
     <nav className="space-y-1.5" aria-label="Điều hướng chính">
@@ -123,7 +123,7 @@ function Sidebar({ view, pending, onView }: { view: View; pending: number; onVie
       <NavItem icon={<HandCoins />} label="Nợ & cho vay" active={view === 'debts'} onClick={() => onView('debts')} />
       <NavItem icon={<CreditCard />} label="Thẻ tín dụng" active={view === 'cards'} onClick={() => onView('cards')} />
     </nav>
-    <div className="mt-auto space-y-1.5"><NavItem icon={<Settings />} label="Cài đặt" onClick={() => undefined} /><button className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-[#f2f5f3]"><CircleUserRound className="size-5" /><span className="min-w-0 flex-1 truncate text-sm font-semibold">Danny Nhật</span><ChevronDown className="size-4 text-[#7b8982]" /></button></div>
+    <div className="mt-auto space-y-1.5"><NavItem icon={<Settings />} label="Cài đặt" onClick={onInfo} /><button onClick={onInfo} className="flex w-full items-center gap-3 rounded-xl px-3 py-2.5 text-left hover:bg-[#f2f5f3]"><CircleUserRound className="size-5" /><span className="min-w-0 flex-1 truncate text-sm font-semibold">Danny Nhật</span><ChevronDown className="size-4 text-[#7b8982]" /></button></div>
   </aside>;
 }
 
