@@ -5,6 +5,21 @@ import { parseGmailTransaction, type GmailMessage } from '@/lib/gmail-parser';
 
 export const dynamic = 'force-dynamic';
 
+async function refreshGoogleAccessToken(refreshToken: string) {
+  const clientId = process.env.GOOGLE_CLIENT_ID;
+  const clientSecret = process.env.GOOGLE_CLIENT_SECRET;
+  if (!clientId || !clientSecret) return { error: 'Vercel chưa có GOOGLE_CLIENT_ID và GOOGLE_CLIENT_SECRET để tự gia hạn Gmail.' } as const;
+  const response = await fetch('https://oauth2.googleapis.com/token', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    body: new URLSearchParams({ client_id: clientId, client_secret: clientSecret, refresh_token: refreshToken, grant_type: 'refresh_token' }),
+    cache: 'no-store',
+  });
+  if (!response.ok) return { error: 'Refresh token Google không còn hiệu lực. Cần cấp lại quyền Gmail một lần.' } as const;
+  const data = await response.json() as { access_token?: string; expires_in?: number };
+  return data.access_token ? { accessToken: data.access_token, expiresIn: data.expires_in ?? 3600 } as const : { error: 'Google không trả về access token mới.' } as const;
+}
+
 export async function POST() {
   const cookieStore = await cookies();
   const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -20,10 +35,26 @@ export async function POST() {
   const { data: auth } = await supabase.auth.getUser();
   if (!auth.user) return NextResponse.json({ error: 'Phiên đăng nhập đã hết hạn.' }, { status: 401 });
 
-  const providerToken = cookieStore.get('ohbaby-google-token')?.value;
-  if (!providerToken) return NextResponse.json({ error: 'Hãy đăng xuất rồi đăng nhập lại để cấp quyền Gmail chỉ đọc.' }, { status: 401 });
+  let providerToken = cookieStore.get('ohbaby-google-token')?.value;
+  const refreshToken = cookieStore.get('ohbaby-google-refresh-token')?.value;
+  let refreshedExpiresIn: number | null = null;
 
-  const tokenInfoResponse = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(providerToken)}`, { cache: 'no-store' });
+  if (!providerToken && refreshToken) {
+    const refreshed = await refreshGoogleAccessToken(refreshToken);
+    if ('error' in refreshed) return NextResponse.json({ code: 'GMAIL_REFRESH_FAILED', error: refreshed.error }, { status: 401 });
+    providerToken = refreshed.accessToken;
+    refreshedExpiresIn = refreshed.expiresIn;
+  }
+  if (!providerToken) return NextResponse.json({ error: 'Chưa có quyền Gmail dài hạn. Nhấn “Cấp lại quyền Gmail” một lần.' }, { status: 401 });
+
+  let tokenInfoResponse = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(providerToken)}`, { cache: 'no-store' });
+  if (!tokenInfoResponse.ok && refreshToken) {
+    const refreshed = await refreshGoogleAccessToken(refreshToken);
+    if ('error' in refreshed) return NextResponse.json({ code: 'GMAIL_REFRESH_FAILED', error: refreshed.error }, { status: 401 });
+    providerToken = refreshed.accessToken;
+    refreshedExpiresIn = refreshed.expiresIn;
+    tokenInfoResponse = await fetch(`https://oauth2.googleapis.com/tokeninfo?access_token=${encodeURIComponent(providerToken)}`, { cache: 'no-store' });
+  }
   const tokenInfo = tokenInfoResponse.ok ? await tokenInfoResponse.json() as { scope?: string } : null;
   if (!tokenInfo?.scope?.split(' ').includes('https://www.googleapis.com/auth/gmail.readonly')) {
     return NextResponse.json({ code: 'GMAIL_SCOPE_MISSING', error: 'Token Google hiện tại chưa có quyền gmail.readonly. Nhấn “Cấp lại quyền Gmail” rồi chọn Cho phép.' }, { status: 403 });
@@ -57,5 +88,15 @@ export async function POST() {
     const draft = message ? parseGmailTransaction(message) : null;
     return draft ? [draft] : [];
   });
-  return NextResponse.json({ drafts });
+  const result = NextResponse.json({ drafts });
+  if (refreshedExpiresIn) {
+    result.cookies.set('ohbaby-google-token', providerToken, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: Math.max(60, refreshedExpiresIn - 60),
+    });
+  }
+  return result;
 }

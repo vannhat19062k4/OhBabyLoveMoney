@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ArrowDownLeft, ArrowUpRight, Banknote, Bell, ChevronDown, CircleUserRound, CreditCard, HandCoins, Home, Inbox, Landmark, LogOut, MailCheck, Pencil, Plus, ScanLine, Search, Settings, TrendingDown, TrendingUp, WalletCards, X } from 'lucide-react';
 import Image from 'next/image';
 import { Badge } from '@/components/ui/badge';
@@ -15,6 +15,7 @@ type Debt = { id: string; person: string; type: 'owe' | 'lend'; total: number; p
 type FinancialAccount = { id: string; name: string; type: 'bank' | 'cash' | 'ewallet'; balance: number; color: string };
 type PendingImport = { id: string; bank: string; merchant: string; amount: number; time: string; category: string; group: 'expense' | 'income'; accountId?: string };
 type AppData = { transactions: Transaction[]; budgets: Budget[]; debts: Debt[]; accounts: FinancialAccount[]; pending: PendingImport[]; cardBalance: number; cardLimit: number };
+type CloudPayload = AppData & { _meta?: { clientId: string; revision: number } };
 
 const money = (value: number) => `${new Intl.NumberFormat('vi-VN').format(value)} ₫`;
 const emptyData = (): AppData => ({ transactions: [], budgets: [], debts: [], accounts: [], pending: [], cardBalance: 0, cardLimit: 0 });
@@ -45,8 +46,13 @@ export default function HomePage() {
   const [accountId, setAccountId] = useState('');
   const [authState, setAuthState] = useState<'loading' | 'unconfigured' | 'signed_out' | 'signed_in'>('loading');
   const [gmailBusy, setGmailBusy] = useState(false);
+  const clientIdRef = useRef('');
+  const revisionRef = useRef(0);
+  const suppressNextSaveRef = useRef(false);
 
   useEffect(() => {
+    clientIdRef.current = sessionStorage.getItem('ohbabylovemoney-client-id') || crypto.randomUUID();
+    sessionStorage.setItem('ohbabylovemoney-client-id', clientIdRef.current);
     const applyData = (data: Partial<AppData> | null) => {
       const safe = cleanLegacyDemoData(data ?? emptyData());
       setTransactions((safe.transactions ?? []).map((item: Transaction) => ({
@@ -92,7 +98,10 @@ export default function HomePage() {
         setAccountEmail(authData.user.email || '');
         const { data: cloud, error: cloudError } = await supabase.from('user_app_state').select('payload').eq('user_id', authData.user.id).maybeSingle();
         if (cloudError) throw cloudError;
-        applyData(cloud?.payload ?? localData ?? emptyData());
+        const cloudPayload = cloud?.payload as CloudPayload | undefined;
+        revisionRef.current = cloudPayload?._meta?.revision ?? 0;
+        suppressNextSaveRef.current = Boolean(cloudPayload);
+        applyData(cloudPayload ?? localData ?? emptyData());
         setAuthState('signed_in');
         setSyncStatus('synced');
       } catch {
@@ -110,11 +119,17 @@ export default function HomePage() {
     if (!ready) return;
     const data = { transactions, budgets, debts, accounts, pending, cardBalance, cardLimit };
     if (accountId) localStorage.setItem(`ohbabylovemoney-data-v3:${accountId}`, JSON.stringify(data));
+    if (suppressNextSaveRef.current) {
+      suppressNextSaveRef.current = false;
+      return;
+    }
     const timer = window.setTimeout(async () => {
       const supabase = getSupabaseBrowserClient();
       if (!supabase || authState !== 'signed_in' || !accountId) return;
       try {
-        const { error } = await supabase.from('user_app_state').upsert({ user_id: accountId, email: accountEmail, payload: data, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+        revisionRef.current += 1;
+        const payload: CloudPayload = { ...data, _meta: { clientId: clientIdRef.current, revision: revisionRef.current } };
+        const { error } = await supabase.from('user_app_state').upsert({ user_id: accountId, email: accountEmail, payload, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
         if (error) throw error;
         setSyncStatus('synced');
       } catch {
@@ -128,8 +143,12 @@ export default function HomePage() {
     const supabase = getSupabaseBrowserClient();
     if (!supabase || !accountId || authState !== 'signed_in') return;
     const channel = supabase.channel(`user-state:${accountId}`).on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'user_app_state', filter: `user_id=eq.${accountId}` }, (change) => {
-      const payload = (change.new as { payload?: Partial<AppData> }).payload;
+      const payload = (change.new as { payload?: CloudPayload }).payload;
       if (!payload) return;
+      if (payload._meta?.clientId === clientIdRef.current) return;
+      if ((payload._meta?.revision ?? 0) < revisionRef.current) return;
+      revisionRef.current = payload._meta?.revision ?? revisionRef.current;
+      suppressNextSaveRef.current = true;
       setTransactions(payload.transactions ?? []);
       setBudgets(payload.budgets ?? []);
       setDebts(payload.debts ?? []);

@@ -31,5 +31,14 @@ export async function GET(request: Request) {
       maxAge: 55 * 60,
     });
   }
+  if (data.session?.provider_refresh_token) {
+    response.cookies.set('ohbaby-google-refresh-token', data.session.provider_refresh_token, {
+      httpOnly: true,
+      secure: process.env.NODE_ENV === 'production',
+      sameSite: 'lax',
+      path: '/',
+      maxAge: 180 * 24 * 60 * 60,
+    });
+  }
   return response;
 }
