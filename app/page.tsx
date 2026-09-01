@@ -5,6 +5,7 @@ import { ArrowDownLeft, ArrowUpRight, Bell, ChevronDown, CircleUserRound, Credit
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { cashSignFor, debtActions, expenseOptions, incomeOptions, reportingBucketFor, type DebtAction, type TransactionGroup } from '@/lib/finance-taxonomy';
+import { getSupabaseBrowserClient } from '@/lib/supabase/client';
 
 type View = 'overview' | 'pending' | 'transactions' | 'accounts' | 'cards' | 'budgets' | 'debts';
 type Transaction = { id: string; icon: string; name: string; category: string; time: string; amount: number; group: TransactionGroup; reporting: 'income' | 'expense' | 'none'; debtAction?: DebtAction; debtId?: string; person?: string; due?: string };
@@ -45,6 +46,8 @@ export default function HomePage() {
   const [ready, setReady] = useState(false);
   const [syncStatus, setSyncStatus] = useState<'loading' | 'synced' | 'local' | 'error'>('loading');
   const [accountEmail, setAccountEmail] = useState('');
+  const [accountId, setAccountId] = useState('');
+  const [authState, setAuthState] = useState<'loading' | 'demo' | 'signed_out' | 'signed_in'>('loading');
 
   useEffect(() => {
     const applyData = (data: any) => {
@@ -68,15 +71,34 @@ export default function HomePage() {
         if (saved) localData = JSON.parse(saved);
       } catch { /* bộ nhớ cục bộ chỉ là bản dự phòng */ }
 
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase) {
+        applyData(localData);
+        setAuthState('demo');
+        setSyncStatus(localData ? 'local' : 'error');
+        setReady(true);
+        return;
+      }
+
       try {
-        const response = await fetch('/api/data', { cache: 'no-store' });
-        if (!response.ok) throw new Error('cloud_unavailable');
-        const cloud = await response.json();
-        setAccountEmail(cloud.email || '');
-        applyData(cloud.data ?? localData);
+        const { data: authData, error: authError } = await supabase.auth.getUser();
+        if (authError || !authData.user) {
+          applyData(localData);
+          setAuthState('signed_out');
+          setSyncStatus('local');
+          setReady(true);
+          return;
+        }
+        setAccountId(authData.user.id);
+        setAccountEmail(authData.user.email || '');
+        const { data: cloud, error: cloudError } = await supabase.from('user_app_state').select('payload').eq('user_id', authData.user.id).maybeSingle();
+        if (cloudError) throw cloudError;
+        applyData(cloud?.payload ?? localData);
+        setAuthState('signed_in');
         setSyncStatus('synced');
       } catch {
         applyData(localData);
+        setAuthState('signed_in');
         setSyncStatus(localData ? 'local' : 'error');
       }
       setReady(true);
@@ -90,16 +112,18 @@ export default function HomePage() {
     const data = { transactions, budgets, debts, pending, cardBalance, cardLimit };
     localStorage.setItem('ohbabylovemoney-data-v2', JSON.stringify(data));
     const timer = window.setTimeout(async () => {
+      const supabase = getSupabaseBrowserClient();
+      if (!supabase || authState !== 'signed_in' || !accountId) return;
       try {
-        const response = await fetch('/api/data', { method: 'PUT', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ data }) });
-        if (!response.ok) throw new Error('sync_failed');
+        const { error } = await supabase.from('user_app_state').upsert({ user_id: accountId, email: accountEmail, payload: data, updated_at: new Date().toISOString() }, { onConflict: 'user_id' });
+        if (error) throw error;
         setSyncStatus('synced');
       } catch {
         setSyncStatus('local');
       }
     }, 450);
     return () => window.clearTimeout(timer);
-  }, [ready, transactions, budgets, debts, pending, cardBalance, cardLimit]);
+  }, [ready, authState, accountId, accountEmail, transactions, budgets, debts, pending, cardBalance, cardLimit]);
 
   const toast = (message: string) => {
     setNotice(message);
@@ -107,6 +131,8 @@ export default function HomePage() {
   };
 
   const title: Record<View, string> = { overview: 'Tổng quan', pending: 'Giao dịch chờ duyệt', transactions: 'Tất cả giao dịch', accounts: 'Tài khoản của bạn', cards: 'Thẻ tín dụng', budgets: 'Ngân sách theo danh mục', debts: 'Nợ & cho vay' };
+
+  if (authState === 'signed_out') return <GoogleSignIn />;
 
   return (
     <main className="min-h-dvh bg-[#f5f7f6] text-[#17231f]">
@@ -157,6 +183,21 @@ export default function HomePage() {
       </Modal>}
     </main>
   );
+}
+
+function GoogleSignIn() {
+  const [busy, setBusy] = useState(false);
+  const signIn = async () => {
+    const supabase = getSupabaseBrowserClient();
+    if (!supabase) return;
+    setBusy(true);
+    const { error } = await supabase.auth.signInWithOAuth({
+      provider: 'google',
+      options: { redirectTo: `${window.location.origin}/auth/callback` },
+    });
+    if (error) setBusy(false);
+  };
+  return <main className="grid min-h-dvh place-items-center bg-[#f5f7f6] p-5 text-[#17231f]"><section className="w-full max-w-md rounded-[28px] border border-[#dfe6e2] bg-white p-7 text-center shadow-[0_24px_60px_rgba(23,35,31,.10)]"><div className="mx-auto grid size-14 place-items-center rounded-2xl bg-[#d8ff62] text-2xl font-black">O</div><h1 className="mt-5 text-2xl font-bold">Đăng nhập OhBabyLoveMoney</h1><p className="mt-2 text-sm leading-6 text-[#66756e]">Dữ liệu tài chính được tách riêng và đồng bộ theo tài khoản Google của bạn.</p><Button onClick={signIn} disabled={busy} className="mt-6 h-12 w-full bg-[#17231f] text-white"><span className="grid size-6 place-items-center rounded-full bg-white font-bold text-[#4285f4]">G</span>{busy?'Đang chuyển đến Google…':'Tiếp tục với Google'}</Button><p className="mt-4 text-xs leading-5 text-[#849189]">Ứng dụng không nhận hoặc lưu mật khẩu Google.</p></section></main>;
 }
 
 function Sidebar({ view, pending, onView, onInfo }: { view: View; pending: number; onView: (view: View) => void; onInfo: () => void }) {
