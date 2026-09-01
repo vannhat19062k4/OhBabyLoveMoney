@@ -1,0 +1,11 @@
+{
+  "name": "OhBabyLoveMoney",
+  "short_name": "LoveMoney",
+  "description": "Quản lý tài chính cá nhân rõ ràng và chính xác.",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f5f7f6",
+  "theme_color": "#17231f",
+  "lang": "vi",
+  "icons": [{ "src": "/favicon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any maskable" }]
+}
