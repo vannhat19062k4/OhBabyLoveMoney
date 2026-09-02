@@ -61,8 +61,8 @@ export async function POST() {
   }
 
   const listUrl = new URL('https://gmail.googleapis.com/gmail/v1/users/me/messages');
-  listUrl.searchParams.set('maxResults', '40');
-  listUrl.searchParams.set('q', 'newer_than:30d');
+  listUrl.searchParams.set('maxResults', '100');
+  listUrl.searchParams.set('q', 'newer_than:90d (TPBank OR Techcombank OR Vietcombank OR MoMo OR M_Service)');
   const headers = { Authorization: `Bearer ${providerToken}` };
   const listResponse = await fetch(listUrl, { headers, cache: 'no-store' });
   if (!listResponse.ok) {

@@ -39,8 +39,8 @@ function stripMarkup(value: string) {
 
 function identifyBank(value: string) {
   const text = value.toLowerCase();
-  if (/techcombank|vcb? digibank/.test(text)) return 'Techcombank';
-  if (/vietcombank|vcb/.test(text)) return 'Vietcombank';
+  if (/techcombank|\btcb\b/.test(text)) return 'Techcombank';
+  if (/vietcombank|vcb digibank|\bvcb\b/.test(text)) return 'Vietcombank';
   if (/tpbank|tp bank|evo/.test(text)) return 'TPBank';
   if (/momo|m_service/.test(text)) return 'MoMo';
   return null;

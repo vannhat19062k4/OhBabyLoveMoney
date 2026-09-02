@@ -14,14 +14,18 @@ export async function GET(request: Request) {
   }
 
   const cookieStore = await cookies();
+  const destination = new URL(next.startsWith('/') ? next : '/', url.origin);
+  const response = NextResponse.redirect(destination);
   const supabase = createServerClient(supabaseUrl, supabaseKey, {
     cookies: {
       getAll: () => cookieStore.getAll(),
-      setAll: (values) => values.forEach(({ name, value, options }) => cookieStore.set(name, value, options)),
+      setAll: (values) => values.forEach(({ name, value, options }) => response.cookies.set(name, value, options)),
     },
   });
   const { data, error } = await supabase.auth.exchangeCodeForSession(code);
-  const response = NextResponse.redirect(new URL(error ? '/?auth_error=oauth' : next, url.origin));
+  if (error) return NextResponse.redirect(new URL('/?auth_error=oauth', url.origin));
+  response.cookies.set('ohbaby-google-token', '', { path: '/', maxAge: 0 });
+  response.cookies.set('ohbaby-google-refresh-token', '', { path: '/', maxAge: 0 });
   if (data.session?.provider_token) {
     response.cookies.set('ohbaby-google-token', data.session.provider_token, {
       httpOnly: true,
@@ -37,7 +41,7 @@ export async function GET(request: Request) {
       secure: process.env.NODE_ENV === 'production',
       sameSite: 'lax',
       path: '/',
-      maxAge: 180 * 24 * 60 * 60,
+      maxAge: 365 * 24 * 60 * 60,
     });
   }
   return response;

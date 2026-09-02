@@ -4,8 +4,8 @@
   "description": "Quản lý tài chính cá nhân rõ ràng và chính xác.",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#fffafb",
-  "theme_color": "#17231f",
+  "background_color": "#f2f2f7",
+  "theme_color": "#f2f2f7",
   "lang": "vi",
   "icons": [
     { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
