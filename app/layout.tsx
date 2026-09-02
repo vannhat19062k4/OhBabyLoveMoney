@@ -1,4 +1,4 @@
-import type { Metadata } from 'next';
+import type { Metadata, Viewport } from 'next';
 import './globals.css';
 import { PwaRegister } from './pwa-register';
 
@@ -23,6 +23,13 @@ export const metadata: Metadata = {
     description: 'Quản lý tiền rõ ràng, sống nhẹ nhàng hơn.',
     images: ['/og.png'],
   },
+};
+
+export const viewport: Viewport = {
+  width: 'device-width',
+  initialScale: 1,
+  viewportFit: 'cover',
+  themeColor: '#f2f2f7',
 };
 
 export default function RootLayout({

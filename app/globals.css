@@ -7,8 +7,8 @@
 @theme inline {
   --color-background: var(--background);
   --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", sans-serif;
+  --font-mono: "SFMono-Regular", Consolas, monospace;
   --font-heading: var(--font-sans);
   --color-sidebar-ring: var(--sidebar-ring);
   --color-sidebar-border: var(--sidebar-border);
@@ -49,14 +49,16 @@
 }
 
 body {
-  font-family: var(--font-geist-sans), Arial, Helvetica, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "SF Pro Display", "Helvetica Neue", sans-serif;
   min-height: 100dvh;
   overscroll-behavior-y: none;
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
 }
 
 :root {
-  --background: #f5f7f6;
-  --foreground: #17231f;
+  --background: #f2f2f7;
+  --foreground: #1c1c1e;
   --card: oklch(1 0 0);
   --card-foreground: oklch(0.145 0 0);
   --popover: oklch(1 0 0);
@@ -72,7 +74,7 @@ body {
   --destructive: oklch(0.577 0.245 27.325);
   --border: oklch(0.922 0 0);
   --input: oklch(0.922 0 0);
-  --ring: #86a91f;
+  --ring: #007aff;
   --chart-1: oklch(0.87 0 0);
   --chart-2: oklch(0.556 0 0);
   --chart-3: oklch(0.439 0 0);
@@ -89,7 +91,8 @@ body {
   --sidebar-ring: oklch(0.708 0 0);
 }
 
-button { cursor: pointer; }
+button { cursor: pointer; -webkit-tap-highlight-color: transparent; }
+input, select, textarea, button { font: inherit; }
 
 .bank-logo {
   display: grid;
@@ -104,27 +107,33 @@ button { cursor: pointer; }
 .bank-pink { background: #d92b72; }
 
 .surface {
-  border: 1px solid #dfe6e2;
-  border-radius: 1.375rem;
+  border: 1px solid rgb(0 0 0 / 5%);
+  border-radius: 1.5rem;
   background: white;
   padding: 1.25rem;
+  box-shadow: 0 1px 2px rgb(15 23 42 / 4%);
 }
 
 .field {
-  height: 2.75rem;
+  min-height: 3rem;
   width: 100%;
-  border: 1px solid #d9dfdc;
-  border-radius: 0.8rem;
-  background: white;
+  border: 1px solid rgb(60 60 67 / 12%);
+  border-radius: 0.9rem;
+  background: #f7f7fa;
   padding: 0 0.85rem;
-  font-size: 0.875rem;
+  font-size: 1rem;
   font-weight: 500;
   outline: none;
 }
 
 .field:focus {
-  border-color: #86a91f;
-  box-shadow: 0 0 0 3px rgb(134 169 31 / 12%);
+  border-color: #007aff;
+  box-shadow: 0 0 0 3px rgb(0 122 255 / 12%);
+}
+
+@media (max-width: 767px) {
+  .surface { border-radius: 1.375rem; padding: 1rem; }
+  select.field, input.field, textarea.field { font-size: 16px; }
 }
 
 .dark {

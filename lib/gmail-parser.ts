@@ -4,6 +4,7 @@ export type GmailDraft = {
   merchant: string;
   amount: number;
   time: string;
+  occurredAt?: string;
   category: string;
   group: 'expense' | 'income';
 };
@@ -58,7 +59,7 @@ function inferGroup(value: string): 'expense' | 'income' {
 }
 
 function inferMerchant(subject: string, text: string, bank: string) {
-  const labeled = text.match(/(?:nội dung|noi dung|mô tả|mo ta|merchant|đơn vị chấp nhận thẻ|don vi chap nhan the)\s*[:\-]?\s*([^|;]{2,80})/i)?.[1]?.trim();
+  const labeled = text.match(/(?:nội dung|noi dung|mô tả|mo ta|merchant|đơn vị chấp nhận thẻ|don vi chap nhan the)\s*[:-]?\s*([^|;]{2,80})/i)?.[1]?.trim();
   if (labeled) return labeled.slice(0, 80);
   return subject.replace(/\[?thông báo\]?|\[?notification\]?/gi, '').trim().slice(0, 80) || `Giao dịch ${bank}`;
 }
@@ -77,6 +78,7 @@ export function parseGmailTransaction(message: GmailMessage): GmailDraft | null 
     merchant: inferMerchant(subject, text, bank),
     amount,
     time: message.internalDate ? new Date(Number(message.internalDate)).toLocaleString('vi-VN') : 'Từ Gmail',
+    occurredAt: message.internalDate ? new Date(Number(message.internalDate)).toISOString() : undefined,
     category: '',
     group: inferGroup(text),
   };
